@@ -2324,170 +2324,172 @@ def render_context_manager():
             imgui.set_tooltip("Rescan directory for new files.")
 
         imgui.same_line()
+    
     if imgui.button("Clear"):
         state.selected_files.clear()
         state.file_checked.clear()
         state.file_exists_cache.clear()
         state.stats_dirty = True
         save_fileset()
+    
     if imgui.is_item_hovered():
         imgui.set_tooltip("Deselect all files.")
 
-        selected_files_list = [f for f in state.selected_files if f.exists()]
-        total_lines = sum(get_file_stats(f)[0] for f in selected_files_list)
-        total_tokens = sum(get_file_stats(f)[1] for f in selected_files_list)
-        model_list = list(AVAILABLE_MODELS.keys())
-        model_name = model_list[state.model_idx] if state.model_idx < len(model_list) else ""
-        _, cost_str = calculate_input_cost(total_tokens, model_name)
+    selected_files_list = [f for f in state.selected_files if f.exists()]
+    total_lines = sum(get_file_stats(f)[0] for f in selected_files_list)
+    total_tokens = sum(get_file_stats(f)[1] for f in selected_files_list)
+    model_list = list(AVAILABLE_MODELS.keys())
+    model_name = model_list[state.model_idx] if state.model_idx < len(model_list) else ""
+    _, cost_str = calculate_input_cost(total_tokens, model_name)
 
-        imgui.same_line()
-        imgui.text_colored(STYLE.get_imvec4("fg_dim"), f"  Selected: {len(selected_files_list)} files | {total_lines} lines | ~{total_tokens} tokens | {cost_str}")
+    imgui.same_line()
+    imgui.text_colored(STYLE.get_imvec4("fg_dim"), f"  Selected: {len(selected_files_list)} files | {total_lines} lines | ~{total_tokens} tokens | {cost_str}")
 
-        imgui.separator()
+    imgui.separator()
 
-        imgui.columns(2, "ctx_cols")
+    imgui.columns(2, "ctx_cols")
 
-        imgui.text("Groups")
-        imgui.begin_child("groups_list", imgui.ImVec2(0, -30))
-        for name in list(state.presets.keys()):
-            _render_group_manage_row(name)
-        imgui.end_child()
+    imgui.text("Groups")
+    imgui.begin_child("groups_list", imgui.ImVec2(0, -30))
+    for name in list(state.presets.keys()):
+        _render_group_manage_row(name)
+    imgui.end_child()
 
-        if imgui.button("Create Group"):
-            if state.selected_files:
-                state.show_create_group_popup = True
-                state.new_group_name = ""
-            else:
-                log_message("No files selected to create group")
+    if imgui.button("Create Group"):
+        if state.selected_files:
+            state.show_create_group_popup = True
+            state.new_group_name = ""
+        else:
+            log_message("No files selected to create group")
 
-        imgui.next_column()
+    imgui.next_column()
 
-        imgui.text("Files")
+    imgui.text("Files")
 
-        if state.is_scanning:
-            imgui.text_colored(STYLE.get_imvec4("queued"), "Scanning files in background... This may take a moment.")
-            imgui.begin_child("files_list", imgui.ImVec2(0, 0))
-            imgui.end_child()
-            imgui.columns(1)
-            imgui.end()
-            return
-
-        tree = state.view_tree
-
+    if state.is_scanning:
+        imgui.text_colored(STYLE.get_imvec4("queued"), "Scanning files in background... This may take a moment.")
         imgui.begin_child("files_list", imgui.ImVec2(0, 0))
+        imgui.end_child()
+        imgui.columns(1)
+        imgui.end()
+        return
 
-        table_flags = imgui.TableFlags_.row_bg | imgui.TableFlags_.borders_inner_v | imgui.TableFlags_.resizable | imgui.TableFlags_.scroll_y
-        if imgui.begin_table("files_table", 3, table_flags):
-            imgui.table_setup_column("Name", imgui.TableColumnFlags_.width_stretch)
-            imgui.table_setup_column("Lines", imgui.TableColumnFlags_.width_fixed, 60)
-            imgui.table_setup_column("Tokens", imgui.TableColumnFlags_.width_fixed, 70)
-            imgui.table_headers_row()
+    tree = state.view_tree
 
-            def render_tree_row(name, node, current_path, is_folder=False):
-                if is_folder:
-                    full_path = current_path / name
-                    folder_key = str(full_path)
-                    is_open = state.folder_states.get(folder_key, False)
+    imgui.begin_child("files_list", imgui.ImVec2(0, 0))
 
-                    folder_lines, folder_tokens = node.get("_stats", (0, 0))
-                    descendants = node.get("_descendants", [])
-                    
-                    if not descendants:
-                        folder_selected = False
-                    else:
-                        folder_selected = True
-                        for f in descendants:
-                            if f not in state.selected_files:
-                                folder_selected = False
-                                break
+    table_flags = imgui.TableFlags_.row_bg | imgui.TableFlags_.borders_inner_v | imgui.TableFlags_.resizable | imgui.TableFlags_.scroll_y
+    if imgui.begin_table("files_table", 3, table_flags):
+        imgui.table_setup_column("Name", imgui.TableColumnFlags_.width_stretch)
+        imgui.table_setup_column("Lines", imgui.TableColumnFlags_.width_fixed, 60)
+        imgui.table_setup_column("Tokens", imgui.TableColumnFlags_.width_fixed, 70)
+        imgui.table_headers_row()
 
-                    imgui.table_next_row()
-                    imgui.table_next_column()
+        def render_tree_row(name, node, current_path, is_folder=False):
+            if is_folder:
+                full_path = current_path / name
+                folder_key = str(full_path)
+                is_open = state.folder_states.get(folder_key, False)
 
-                    # Checkbox + Folder Name in the same column
-                    changed, new_val = imgui.checkbox(f"##{folder_key}", folder_selected)
-                    if changed:
-                        toggle_folder_selection(full_path, new_val)
-                        if new_val:
-                            # Auto-check files when folder is selected
-                            for f in descendants:
-                                state.file_checked[f] = True
-
-                    imgui.same_line()
-
-                    flags = imgui.TreeNodeFlags_.span_all_columns | imgui.TreeNodeFlags_.open_on_arrow
-                    if is_open:
-                        flags |= imgui.TreeNodeFlags_.default_open
-                    node_open = imgui.tree_node_ex(f"{name}/", flags)
-                    state.folder_states[folder_key] = node_open
-
-                    imgui.table_next_column()
-                    imgui.text_colored(STYLE.get_imvec4("fg_dim"), str(folder_lines))
-
-                    imgui.table_next_column()
-                    imgui.text_colored(STYLE.get_imvec4("fg_dim"), str(folder_tokens))
-
-                    if node_open:
-                        if "_children" in node:
-                            sorted_children = sorted(node["_children"].items(), key=lambda x: x[0].lower())
-                            for child_name, child_node in sorted_children:
-                                render_tree_row(child_name, child_node, full_path, is_folder=True)
-                        if "_files" in node:
-                            sorted_files = sorted(node["_files"], key=lambda x: x[0].lower())
-                            for file_name, file_path in sorted_files:
-                                render_tree_row(file_name, {"_path": file_path}, current_path, is_folder=False)
-                        imgui.tree_pop()
+                folder_lines, folder_tokens = node.get("_stats", (0, 0))
+                descendants = node.get("_descendants", [])
+                
+                if not descendants:
+                    folder_selected = False
                 else:
-                    file_path = node["_path"]
-                    is_selected = file_path in state.selected_files
-                    
-                    lines, tokens, _ = get_file_stats(file_path)
+                    folder_selected = True
+                    for f in descendants:
+                        if f not in state.selected_files:
+                            folder_selected = False
+                            break
 
-                    imgui.table_next_row()
-                    imgui.table_next_column()
+                imgui.table_next_row()
+                imgui.table_next_column()
 
-                    # Checkbox + File Name in the same column
-                    imgui.push_id(str(file_path))
-                    changed, new_val = imgui.checkbox(f"##sel", is_selected)
-                    if changed:
-                        toggle_file_selection(file_path, new_val)
-                        if new_val:
-                            state.file_checked[file_path] = True
-                    imgui.pop_id()
+                # Checkbox + Folder Name in the same column
+                changed, new_val = imgui.checkbox(f"##{folder_key}", folder_selected)
+                if changed:
+                    toggle_folder_selection(full_path, new_val)
+                    if new_val:
+                        # Auto-check files when folder is selected
+                        for f in descendants:
+                            state.file_checked[f] = True
 
-                    imgui.same_line()
-                    
-                    label_color = None if is_selected else STYLE.get_imvec4("fg_dim")
-                    if label_color:
-                        imgui.push_style_color(imgui.Col_.text, label_color)
+                imgui.same_line()
 
-                    # Use Leaf node to ensure alignment with folder nodes (indentation)
-                    flags = imgui.TreeNodeFlags_.leaf | imgui.TreeNodeFlags_.no_tree_push_on_open | imgui.TreeNodeFlags_.span_all_columns
-                    imgui.tree_node_ex(name, flags)
+                flags = imgui.TreeNodeFlags_.span_all_columns | imgui.TreeNodeFlags_.open_on_arrow
+                if is_open:
+                    flags |= imgui.TreeNodeFlags_.default_open
+                node_open = imgui.tree_node_ex(f"{name}/", flags)
+                state.folder_states[folder_key] = node_open
 
-                    if label_color:
-                        imgui.pop_style_color()
+                imgui.table_next_column()
+                imgui.text_colored(STYLE.get_imvec4("fg_dim"), str(folder_lines))
 
-                    imgui.table_next_column()
-                    imgui.text(str(lines))
+                imgui.table_next_column()
+                imgui.text_colored(STYLE.get_imvec4("fg_dim"), str(folder_tokens))
 
-                    imgui.table_next_column()
-                    imgui.text(str(tokens))
+                if node_open:
+                    if "_children" in node:
+                        sorted_children = sorted(node["_children"].items(), key=lambda x: x[0].lower())
+                        for child_name, child_node in sorted_children:
+                            render_tree_row(child_name, child_node, full_path, is_folder=True)
+                    if "_files" in node:
+                        sorted_files = sorted(node["_files"], key=lambda x: x[0].lower())
+                        for file_name, file_path in sorted_files:
+                            render_tree_row(file_name, {"_path": file_path}, current_path, is_folder=False)
+                    imgui.tree_pop()
+            else:
+                file_path = node["_path"]
+                is_selected = file_path in state.selected_files
+                
+                lines, tokens, _ = get_file_stats(file_path)
 
-            root_path = Path(".")
-            sorted_root = sorted(tree.items(), key=lambda x: x[0].lower())
-            
-            for name, node in sorted_root:
-                if name in ("_files", "_children", "_stats", "_descendants"):
-                    continue
-                render_tree_row(name, node, root_path, is_folder=True)
+                imgui.table_next_row()
+                imgui.table_next_column()
 
-            if "_files" in tree:
-                root_files = tree.get("_files", [])
-                for file_name, file_path in sorted(root_files, key=lambda x: x[0].lower()):
-                    render_tree_row(file_name, {"_path": file_path}, root_path, is_folder=False)
+                # Checkbox + File Name in the same column
+                imgui.push_id(str(file_path))
+                changed, new_val = imgui.checkbox(f"##sel", is_selected)
+                if changed:
+                    toggle_file_selection(file_path, new_val)
+                    if new_val:
+                        state.file_checked[file_path] = True
+                imgui.pop_id()
 
-            imgui.end_table()
+                imgui.same_line()
+                
+                label_color = None if is_selected else STYLE.get_imvec4("fg_dim")
+                if label_color:
+                    imgui.push_style_color(imgui.Col_.text, label_color)
+
+                # Use Leaf node to ensure alignment with folder nodes (indentation)
+                flags = imgui.TreeNodeFlags_.leaf | imgui.TreeNodeFlags_.no_tree_push_on_open | imgui.TreeNodeFlags_.span_all_columns
+                imgui.tree_node_ex(name, flags)
+
+                if label_color:
+                    imgui.pop_style_color()
+
+                imgui.table_next_column()
+                imgui.text(str(lines))
+
+                imgui.table_next_column()
+                imgui.text(str(tokens))
+
+        root_path = Path(".")
+        sorted_root = sorted(tree.items(), key=lambda x: x[0].lower())
+        
+        for name, node in sorted_root:
+            if name in ("_files", "_children", "_stats", "_descendants"):
+                continue
+            render_tree_row(name, node, root_path, is_folder=True)
+
+        if "_files" in tree:
+            root_files = tree.get("_files", [])
+            for file_name, file_path in sorted(root_files, key=lambda x: x[0].lower()):
+                render_tree_row(file_name, {"_path": file_path}, root_path, is_folder=False)
+
+        imgui.end_table()
 
         imgui.end_child()
 

@@ -121,9 +121,9 @@ delta config --open          # Open AppData folder
 | `--review` | Open visual diff report upon successful completion        |
 | `-V, --verbosity` | Output level (verbose/low/diff/silent)                    |
 | `-p, --preset` | Use files from a specific preset                          |
- | `--dry-run` | Perform a dry run (exit without applying changes)         |
+| `--dry-run` | Perform a dry run (exit without applying changes)         |
 
-## Why not use ____ instead?
+## Why not use <other tool> instead?
 
 Other tools such as Claude Code work pretty good these days, especially for "unsupervised" work -- use them if they fit your use case better.
 
