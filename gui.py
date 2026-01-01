@@ -6,6 +6,7 @@ import time
 import queue
 import json
 import os
+import fnmatch
 from pathlib import Path
 from datetime import datetime
 
@@ -1506,19 +1507,7 @@ def _render_group_manage_row(name: str):
     
     imgui.pop_id()
 
-def render_files_panel():
-    imgui.text("Groups")
-    imgui.separator()
-
-    if state.presets:
-        for name in list(state.presets.keys()):
-            _render_group_row(name)
-    else:
-        imgui.text_colored(STYLE.get_imvec4("fg_dim"), "No groups saved")
-
-    imgui.dummy(imgui.ImVec2(0, 10))
-    imgui.separator()
-
+def update_app_stats():
     # Rolling file existence check
     if state.cached_sorted_files:
         files_to_check = 5
@@ -1564,9 +1553,23 @@ def render_files_panel():
         _, state.cached_cost_str = calculate_input_cost(state.cached_total_tokens, model_name)
         
         state.stats_dirty = False
-    
+
+def render_files_panel():
+    imgui.text("Groups")
+    imgui.separator()
+
+    if state.presets:
+        for name in list(state.presets.keys()):
+            _render_group_row(name)
+    else:
+        imgui.text_colored(STYLE.get_imvec4("fg_dim"), "No groups saved")
+
+    imgui.dummy(imgui.ImVec2(0, 10))
+    imgui.separator()
+
+    update_app_stats()
     sorted_files = state.cached_sorted_files
-    
+
     checked_count = sum(1 for f in sorted_files if state.file_checked.get(f, True) and state.file_exists_cache.get(f, True))
 
     header_text = f"Selected Context ({checked_count}/{len(state.selected_files)} files)"
@@ -2291,15 +2294,11 @@ def render_context_manager():
     if imgui.is_item_hovered():
         imgui.set_tooltip("Deselect all files.")
 
-    selected_files_list = [f for f in state.selected_files if f.exists()]
-    total_lines = sum(get_file_stats(f)[0] for f in selected_files_list)
-    total_tokens = sum(get_file_stats(f)[1] for f in selected_files_list)
-    model_list = list(AVAILABLE_MODELS.keys())
-    model_name = model_list[state.model_idx] if state.model_idx < len(model_list) else ""
-    _, cost_str = calculate_input_cost(total_tokens, model_name)
+    update_app_stats()
+    checked_count = sum(1 for f in state.cached_sorted_files if state.file_checked.get(f, True) and state.file_exists_cache.get(f, True))
 
     imgui.same_line()
-    imgui.text_colored(STYLE.get_imvec4("fg_dim"), f"  Selected: {len(selected_files_list)} files | {total_lines} lines | ~{total_tokens} tokens | {cost_str}")
+    imgui.text_colored(STYLE.get_imvec4("fg_dim"), f"  Selected: {checked_count} checked | {state.cached_total_lines} lines | ~{state.cached_total_tokens} tokens | {state.cached_cost_str}")
 
     imgui.separator()
 
@@ -2332,8 +2331,14 @@ def render_context_manager():
             imgui.table_setup_column("Tokens", imgui.TableColumnFlags_.width_fixed, 70)
             imgui.table_headers_row()
             
-            search_lower = state.context_search_text.lower()
-            filtered = [f for f in state.file_paths if search_lower in str(f).lower()]
+            search_text = state.context_search_text
+            is_glob = any(c in search_text for c in "*?[]")
+            
+            search_lower = search_text.lower()
+            if is_glob:
+                filtered = [f for f in state.file_paths if fnmatch.fnmatch(str(f).lower(), search_lower)]
+            else:
+                filtered = [f for f in state.file_paths if search_lower in str(f).lower()]
             
             clipper = imgui.ListClipper()
             clipper.begin(len(filtered))
@@ -2383,7 +2388,7 @@ def render_context_manager():
             # Lazy Load: Trigger scan if opened and not scanned
             if is_open and not node.get("_scanned") and not node.get("_scanning"):
                 node["_scanning"] = True
-                queue_scan_request(full_path)
+                queue_scan_request(full_path, priority=0)
             
             imgui.table_next_row()
             imgui.table_next_column()

@@ -637,14 +637,14 @@ def build_file_tree(paths: list[Path], root: Path) -> dict:
         target_node["_files"].append((parts[-1], file_path))
     return tree
 
-scan_queue = queue.Queue()
+scan_queue = queue.PriorityQueue()
 tree_lock = threading.Lock()
 _scan_thread_started = False
 
 def _folder_scan_worker():
     """Worker that processes scan requests from the queue."""
     while True:
-        path = scan_queue.get()
+        priority, path = scan_queue.get()
         try:
             _scan_folder_impl(path)
         except Exception as e:
@@ -726,15 +726,19 @@ def _scan_folder_impl(folder_path: Path):
             if d not in node["_children"]:
                 node["_children"][d] = {"_files": [], "_children": {}, "_scanned": False}
         
+            # Queue background scan for breadth-first traversal
+            sub_path = folder_path / d
+            queue_scan_request(sub_path, priority=20)
+        
         node["_scanned"] = True
         node["_scanning"] = False
         
     state.view_tree_dirty = True
 
-def queue_scan_request(path: Path):
+def queue_scan_request(path: Path, priority: int = 10):
     """Queue a folder for scanning."""
     state.is_scanning = True
-    scan_queue.put(path)
+    scan_queue.put((priority, path))
 
 def refresh_project_files():
     """Start scanning infrastructure and refresh root."""
@@ -753,7 +757,7 @@ def refresh_project_files():
         state.file_paths = []
 
     # Scan Root
-    queue_scan_request(Path.cwd())
+    queue_scan_request(Path.cwd(), priority=0)
 
 def toggle_file_selection(path: Path, selected: bool):
     """Toggle file selection."""
