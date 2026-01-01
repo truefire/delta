@@ -2259,6 +2259,46 @@ def rebuild_view_tree():
     state.view_tree_dirty = False
     state.last_context_search = state.context_search_text
 
+    if not state.context_search_text:
+        state.cached_flat_filtered_files = None
+        state.cached_whitelist_dirs = None
+        state.cached_whitelist_files = None
+        return
+
+    search_lower = state.context_search_text.lower()
+    is_glob = any(c in search_lower for c in "*?[]")
+    
+    cwd = Path.cwd()
+
+    # 1. Flat Filter
+    if is_glob:
+        state.cached_flat_filtered_files = [f for f in state.file_paths if fnmatch.fnmatch(str(f).lower(), search_lower)]
+    else:
+        state.cached_flat_filtered_files = [f for f in state.file_paths if search_lower in str(f).lower()]
+
+    # 2. Tree Whitelists
+    search_whitelist_dirs = set()
+    search_whitelist_files = set()
+    
+    for f_rel in state.cached_flat_filtered_files:
+        f_abs = cwd / f_rel
+        search_whitelist_files.add(f_abs)
+        
+        p = f_abs.parent
+        while True:
+            if p in search_whitelist_dirs:
+                 break
+            
+            search_whitelist_dirs.add(p)
+            if p == cwd or len(p.parts) <= len(cwd.parts):
+                break
+            p = p.parent
+            
+    search_whitelist_dirs.add(cwd)
+    
+    state.cached_whitelist_dirs = search_whitelist_dirs
+    state.cached_whitelist_files = search_whitelist_files
+
 def render_context_manager():
     if not state.show_context_manager:
         return
@@ -2337,14 +2377,10 @@ def render_context_manager():
             imgui.table_setup_column("Tokens", imgui.TableColumnFlags_.width_fixed, 70)
             imgui.table_headers_row()
             
-            search_text = state.context_search_text
-            is_glob = any(c in search_text for c in "*?[]")
-            
-            search_lower = search_text.lower()
-            if is_glob:
-                filtered = [f for f in state.file_paths if fnmatch.fnmatch(str(f).lower(), search_lower)]
+            if state.cached_flat_filtered_files is not None:
+                filtered = state.cached_flat_filtered_files
             else:
-                filtered = [f for f in state.file_paths if search_lower in str(f).lower()]
+                filtered = state.file_paths
             
             clipper = imgui.ListClipper()
             clipper.begin(len(filtered))
@@ -2380,37 +2416,8 @@ def render_context_manager():
         return
 
     # Tree Mode Filters
-    search_whitelist_dirs = None
-    search_whitelist_files = None
-    
-    if state.context_search_text:
-        search_whitelist_dirs = set()
-        search_whitelist_files = set()
-        
-        search_lower = state.context_search_text.lower()
-        is_glob = any(c in search_lower for c in "*?[]")
-        
-        cwd = Path.cwd()
-        
-        for f_rel in state.file_paths:
-            f_str = str(f_rel)
-            if is_glob:
-                match = fnmatch.fnmatch(f_str.lower(), search_lower)
-            else:
-                match = search_lower in f_str.lower()
-                
-            if match:
-                f_abs = cwd / f_rel
-                search_whitelist_files.add(f_abs)
-                
-                # Add parents
-                p = f_abs.parent
-                while True:
-                    search_whitelist_dirs.add(p)
-                    if p == cwd or len(p.parts) <= len(cwd.parts):
-                        break
-                    p = p.parent
-        search_whitelist_dirs.add(cwd)
+    search_whitelist_dirs = state.cached_whitelist_dirs
+    search_whitelist_files = state.cached_whitelist_files
 
     # Tree Mode
     imgui.begin_child("files_list", imgui.ImVec2(0, 0))

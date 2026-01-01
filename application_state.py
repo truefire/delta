@@ -206,6 +206,10 @@ class AppState:
     view_tree: dict = field(default_factory=dict)
     view_tree_dirty: bool = True
 
+    cached_whitelist_dirs: set = None
+    cached_whitelist_files: set = None
+    cached_flat_filtered_files: list = None
+
     # Performance Caching
     stats_dirty: bool = True
     cached_sorted_files: list = field(default_factory=list)
