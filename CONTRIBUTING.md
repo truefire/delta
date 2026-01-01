@@ -24,7 +24,7 @@ Contributions are welcome. There's no formal submission process, but use common 
    pip install -e .
    ```
 
-## Architecture and Design
+## Architecture and Philosophy
 
 Before diving into the code, please read the [ARCHITECTURE.md](ARCHITECTURE.md).
 Delta follows specific design patterns that differ from typical web-based AI tools:

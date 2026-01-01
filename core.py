@@ -37,6 +37,29 @@ def is_image_file(path: Path | str) -> bool:
     return guess is not None and guess.startswith("image/")
 
 
+def is_binary_file(path: Path | str) -> bool:
+    """Check if the path looks like a binary file."""
+    p = Path(path)
+    # Extension check
+    BINARY_EXTENSIONS = {
+        '.pyc', '.pyo', '.pyd', '.so', '.dll', '.exe', '.bin', '.obj', '.o',
+        '.a', '.lib', '.iso', '.tar', '.zip', '.7z', '.gz', '.rar', '.pdf',
+        '.sqlite', '.db', '.class', '.jar', '.war', '.ear', '.parquet', '.ds_store'
+    }
+    if p.suffix.lower() in BINARY_EXTENSIONS:
+        return True
+    
+    # Content check (read header)
+    try:
+        with open(p, "rb") as f:
+            chunk = f.read(1024)
+            if b"\0" in chunk:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def get_display_path(path: Path | str, cwd: Path | None = None) -> str:
     """Get relative path for display, normalized to forward slashes."""
     if cwd is None:
@@ -1952,8 +1975,25 @@ def get_file_stats(path: Path | str) -> tuple[int, int, str]:
     if not p.is_file():
         return 0, 0, ""
     
+    # Check 1: Size > 10MB
+    try:
+        size = p.stat().st_size
+        if size > 10 * 1024 * 1024:
+            res = (0, 0, f"{p.name} (>10MB)")
+            _stats_cache[key] = res
+            return res
+    except Exception:
+        pass
+
+    # Check 2: Images
     if is_image_file(p):
         res = (0, 1000, f"{p.name} (IMG)")
+        _stats_cache[key] = res
+        return res
+        
+    # Check 3: Binary
+    if is_binary_file(p):
+        res = (0, 0, f"{p.name} (BIN)")
         _stats_cache[key] = res
         return res
         

@@ -643,17 +643,21 @@ def _scan_worker():
         cwd = Path.cwd()
         new_paths = []
 
-        for item in cwd.rglob("*"):
-            if item.is_file():
-                try:
-                    rel = item.relative_to(cwd)
-                except ValueError:
-                    rel = item
-
-                parts = rel.parts
-                if any(p in DEFAULT_HIDDEN or p.startswith('.') for p in parts):
+        for root, dirs, files in os.walk(str(cwd)):
+            # Prune hidden directories
+            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in DEFAULT_HIDDEN]
+            
+            root_path = Path(root)
+            for f in files:
+                if f.startswith('.') or f in DEFAULT_HIDDEN:
                     continue
-                new_paths.append(rel)
+                    
+                full_path = root_path / f
+                try:
+                    rel = full_path.relative_to(cwd)
+                    new_paths.append(rel)
+                except ValueError:
+                    pass
 
         new_paths.sort(key=lambda p: str(p).lower())
         
