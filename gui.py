@@ -2119,7 +2119,7 @@ def render_chat_session(session):
                     
                     # Manually create DiffViewer to show file content as "New File" (Green)
                     # We bypass string parsing to allow safe display of any content
-                    dv = DiffViewer(content="", block_state={"collapsed": True}, viewer_id=i, filename_hint=fpath)
+                    dv = DiffViewer(content="", block_state={"collapsed": True}, viewer_id=f"preview_{i}", filename_hint=fpath)
                     
                     # Patch State
                     dv.state.filename = fpath
