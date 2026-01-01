@@ -206,6 +206,9 @@ class AppState:
     view_tree: dict = field(default_factory=dict)
     view_tree_dirty: bool = True
 
+    search_query_id: int = 0
+    is_searching: bool = False
+
     cached_whitelist_dirs: set = None
     cached_whitelist_files: set = None
     cached_flat_filtered_files: list = None

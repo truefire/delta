@@ -225,6 +225,13 @@ def handle_queue_event(event: dict):
         elif config.focus_mode == "yank":
             yank_window()
 
+    elif event_type == "search_result":
+        if event.get("query_id") == state.search_query_id:
+            state.cached_flat_filtered_files = event.get("flat")
+            state.cached_whitelist_dirs = event.get("dirs")
+            state.cached_whitelist_files = event.get("files")
+            state.is_searching = False
+
 def ensure_user_bubble(session, text: str):
     """Ensure the latest message is a user bubble with the given text."""
     should_add = True
@@ -2255,7 +2262,57 @@ def render_logs_panel():
 
     imgui.end_child()
 
-def rebuild_view_tree():
+def _search_worker(query_id: int, search_text: str, file_paths: list):
+    try:
+        search_lower = search_text.lower()
+        is_glob = any(c in search_lower for c in "*?[]")
+        
+        if state.search_query_id != query_id: return
+
+        # 1. Flat Filter
+        if is_glob:
+            filtered = [f for f in file_paths if fnmatch.fnmatch(str(f).lower(), search_lower)]
+        else:
+            filtered = [f for f in file_paths if search_lower in str(f).lower()]
+
+        if state.search_query_id != query_id: return
+
+        # 2. Tree Whitelists
+        search_whitelist_dirs = set()
+        search_whitelist_files = set()
+        cwd = Path.cwd()
+        
+        for f_rel in filtered:
+            if state.search_query_id != query_id: return
+            
+            f_abs = cwd / f_rel
+            search_whitelist_files.add(f_abs)
+            
+            p = f_abs.parent
+            while True:
+                if p in search_whitelist_dirs:
+                     break
+                
+                search_whitelist_dirs.add(p)
+                if p == cwd or len(p.parts) <= len(cwd.parts):
+                    break
+                p = p.parent
+                
+        search_whitelist_dirs.add(cwd)
+        
+        if state.search_query_id != query_id: return
+
+        state.gui_queue.put({
+            "type": "search_result",
+            "query_id": query_id,
+            "flat": filtered,
+            "dirs": search_whitelist_dirs,
+            "files": search_whitelist_files
+        })
+    except Exception as e:
+        log_message(f"Search thread error: {e}")
+
+def trigger_context_search():
     state.view_tree_dirty = False
     state.last_context_search = state.context_search_text
 
@@ -2263,41 +2320,20 @@ def rebuild_view_tree():
         state.cached_flat_filtered_files = None
         state.cached_whitelist_dirs = None
         state.cached_whitelist_files = None
+        state.is_searching = False
         return
 
-    search_lower = state.context_search_text.lower()
-    is_glob = any(c in search_lower for c in "*?[]")
+    state.search_query_id += 1
+    state.is_searching = True
     
-    cwd = Path.cwd()
+    with tree_lock:
+        current_files = list(state.file_paths)
 
-    # 1. Flat Filter
-    if is_glob:
-        state.cached_flat_filtered_files = [f for f in state.file_paths if fnmatch.fnmatch(str(f).lower(), search_lower)]
-    else:
-        state.cached_flat_filtered_files = [f for f in state.file_paths if search_lower in str(f).lower()]
-
-    # 2. Tree Whitelists
-    search_whitelist_dirs = set()
-    search_whitelist_files = set()
-    
-    for f_rel in state.cached_flat_filtered_files:
-        f_abs = cwd / f_rel
-        search_whitelist_files.add(f_abs)
-        
-        p = f_abs.parent
-        while True:
-            if p in search_whitelist_dirs:
-                 break
-            
-            search_whitelist_dirs.add(p)
-            if p == cwd or len(p.parts) <= len(cwd.parts):
-                break
-            p = p.parent
-            
-    search_whitelist_dirs.add(cwd)
-    
-    state.cached_whitelist_dirs = search_whitelist_dirs
-    state.cached_whitelist_files = search_whitelist_files
+    threading.Thread(
+        target=_search_worker,
+        args=(state.search_query_id, state.context_search_text, current_files),
+        daemon=True
+    ).start()
 
 def render_context_manager():
     if not state.show_context_manager:
@@ -2308,13 +2344,17 @@ def render_context_manager():
 
     if opened:
         if state.view_tree_dirty or state.context_search_text != state.last_context_search:
-            rebuild_view_tree()
+            trigger_context_search()
 
         imgui.text("Search:")
         imgui.same_line()
         imgui.set_next_item_width(300)
         changed, state.context_search_text = imgui.input_text("##search", state.context_search_text)
         render_tooltip("Filter files by name.")
+
+        if state.is_searching:
+            imgui.same_line()
+            imgui.text_colored(STYLE.get_imvec4("queued"), "(Searching...)")
 
         imgui.same_line()
         _, state.context_flatten_search = imgui.checkbox("Flatten", state.context_flatten_search)
