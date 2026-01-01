@@ -23,7 +23,7 @@ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 Then install Delta:
 ```bash
 # Install Delta
-uv tool install git+https://github.com/truefire/delta
+uv tool install git+https://github.com/truefire/delta-private
 ```
 
 # Usage
