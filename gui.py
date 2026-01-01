@@ -1,6 +1,7 @@
 """GUI implementation for Delta Tool."""
 import math
 import sys
+import subprocess
 import threading
 import time
 import queue
@@ -1173,6 +1174,35 @@ def render_settings_panel():
                     change_working_directory(hist_path)
         else:
             imgui.text_disabled("No recent directories")
+        imgui.end_popup()
+
+    imgui.same_line()
+    if imgui.small_button("CMD"):
+        if sys.platform == "win32":
+            subprocess.Popen("start cmd", shell=True, cwd=Path.cwd())
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", "-a", "Terminal", "."], cwd=Path.cwd())
+        else:
+            try:
+                subprocess.Popen(["x-terminal-emulator"], cwd=Path.cwd())
+            except Exception:
+                try:
+                    subprocess.Popen(["gnome-terminal"], cwd=Path.cwd())
+                except Exception:
+                    log_message("Could not detect Linux terminal")
+
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Open terminal in CWD.\nRight-click for File Explorer.")
+
+    if imgui.begin_popup_context_item("cmd_explore_ctx"):
+        if imgui.selectable("Explore", False)[0]:
+            path = str(Path.cwd())
+            if sys.platform == "win32":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
         imgui.end_popup()
 
     imgui.separator()
@@ -2834,7 +2864,7 @@ def run_gui():
     runner_params = hello_imgui.RunnerParams()
     runner_params.ini_filename = str(APP_DATA_DIR / "imgui.ini")
     runner_params.app_window_params.window_title = "Delta Tool"
-    runner_params.app_window_params.window_geometry.size = (1200, 900)
+    runner_params.app_window_params.window_geometry.size = (1260, 945)
     runner_params.app_window_params.restore_previous_geometry = True
     runner_params.app_window_params.borderless = True
     runner_params.app_window_params.borderless_movable = True
