@@ -7,6 +7,7 @@ as hello_imgui handles most window management internally.
 import sys
 import os
 import subprocess
+import multiprocessing
 
 
 def _get_process_hwnd():
@@ -87,72 +88,74 @@ def yank_window() -> None:
             pass
 
 
+def _flash_worker():
+    """Worker function to run the flash overlay in a separate process."""
+    try:
+        import tkinter as tk
+    except ImportError:
+        return
+
+    def get_monitors(root):
+        monitors = []
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                class RECT(ctypes.Structure):
+                    _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), 
+                                ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+                def cb(hMonitor, hdcMonitor, lprcMonitor, dwData):
+                    r = lprcMonitor.contents
+                    monitors.append((r.left, r.top, r.right - r.left, r.bottom - r.top))
+                    return 1
+                MonitorEnumProc = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(RECT), ctypes.c_void_p)
+                user32.EnumDisplayMonitors(None, None, MonitorEnumProc(cb), None)
+            except Exception: pass
+        
+        if not monitors:
+            monitors.append((0, 0, root.winfo_screenwidth(), root.winfo_screenheight()))
+        return monitors
+
+    try:
+        root = tk.Tk()
+        root.withdraw()
+        
+        monitors = get_monitors(root)
+        windows = []
+        
+        for x, y, w, h in monitors:
+            win = tk.Toplevel(root)
+            win.overrideredirect(True)
+            win.attributes('-topmost', True)
+            win.attributes('-alpha', 0.0)
+            win.configure(bg='#FF8C00')
+            win.geometry(f"{w}x{h}+{x}+{y}")
+            windows.append(win)
+        
+        def animate(alpha, step):
+            new_alpha = alpha + step
+            if new_alpha >= 0.25: step = -0.02
+            if new_alpha <= 0:
+                root.destroy()
+                return
+            for win in windows:
+                win.attributes('-alpha', new_alpha)
+            root.after(16, lambda: animate(new_alpha, step))
+            
+        root.after(10, lambda: animate(0.0, 0.04))
+        root.mainloop()
+    except Exception:
+        pass
+
+
 def flash_screens() -> None:
     """Flash the screen orange and application window icon."""
     # 1. Overlay Flash (Orange Screen)
-    # Run in subprocess to avoid blocking main GUI thread or conflicts
-
-    #YEAH this is stupid but it works
-    #Other options are either dependency-heavy or esoteric, not worth it
-    flash_script = """
-import tkinter as tk
-import sys
-
-def get_monitors(root):
-    monitors = []
-    if sys.platform == "win32":
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            class RECT(ctypes.Structure):
-                _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long), 
-                            ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
-            def cb(hMonitor, hdcMonitor, lprcMonitor, dwData):
-                r = lprcMonitor.contents
-                monitors.append((r.left, r.top, r.right - r.left, r.bottom - r.top))
-                return 1
-            MonitorEnumProc = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(RECT), ctypes.c_void_p)
-            user32.EnumDisplayMonitors(None, None, MonitorEnumProc(cb), None)
-        except Exception: pass
-    
-    if not monitors:
-        monitors.append((0, 0, root.winfo_screenwidth(), root.winfo_screenheight()))
-    return monitors
-
-try:
-    root = tk.Tk()
-    root.withdraw()
-    
-    monitors = get_monitors(root)
-    windows = []
-    
-    for x, y, w, h in monitors:
-        win = tk.Toplevel(root)
-        win.overrideredirect(True)
-        win.attributes('-topmost', True)
-        win.attributes('-alpha', 0.0)
-        win.configure(bg='#FF8C00')
-        win.geometry(f"{w}x{h}+{x}+{y}")
-        windows.append(win)
-    
-    def animate(alpha, step):
-        new_alpha = alpha + step
-        if new_alpha >= 0.25: step = -0.02
-        if new_alpha <= 0:
-            root.destroy()
-            return
-        for win in windows:
-            win.attributes('-alpha', new_alpha)
-        root.after(16, lambda: animate(new_alpha, step))
-        
-    root.after(10, lambda: animate(0.0, 0.04))
-    root.mainloop()
-except Exception:
-    pass
-"""
+    # Run in a separate process to avoid blocking main GUI thread or conflicts
     try:
-        subprocess.Popen([sys.executable, "-c", flash_script],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        p = multiprocessing.Process(target=_flash_worker)
+        p.daemon = True
+        p.start()
     except Exception:
         pass
 

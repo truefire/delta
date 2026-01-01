@@ -1061,7 +1061,10 @@ def render_backup_history_window():
                     if imgui.button("Restore"):
                         imgui.open_popup("ConfirmRestore")
                     if imgui.is_item_hovered():
-                        imgui.set_tooltip("Rollback project files to before these changes.")
+                        if source == "git":
+                            imgui.set_tooltip("Checkout this specific git commit state.")
+                        else:
+                            imgui.set_tooltip("Rollback project files to before these changes.")
 
                     if imgui.begin_popup_modal("ConfirmRestore", None, imgui.WindowFlags_.always_auto_resize)[0]:
                         imgui.text(f"Restore state from {ts}?")
