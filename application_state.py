@@ -25,7 +25,14 @@ PRESETS_PATH = str(APP_DATA_DIR / "selection_presets.json")
 SESSIONS_DIR = APP_DATA_DIR / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_HIDDEN = {".git", "__pycache__", ".vscode", ".idea", "venv", "env", "node_modules", ".DS_Store", "dist", "build", "target"}
+DEFAULT_HIDDEN = {
+    ".git", ".svn", ".hg", ".DS_Store", "Thumbs.db",
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
+    ".vscode", ".idea", ".vs",
+    "venv", ".venv", "env", "node_modules", "site-packages",
+    "dist", "build", "target", "out", "bin", "obj",
+    "vendor", "coverage"
+}
 
 def to_relative(path: Path) -> Path:
     """Convert path to relative to CWD if possible."""
