@@ -437,8 +437,22 @@ def io_throttled_update() -> None:
         
         cwd = str(Path.cwd())
         _io_cache["git_repo_path"] = cwd
-        _io_cache["git_is_repo"] = (Path(cwd) / ".git").exists()
         
+        is_repo = False
+        if _io_cache["git_installed"]:
+            try:
+                subprocess.run(
+                    ["git", "rev-parse", "--is-inside-work-tree"],
+                    stdout=subprocess.DEVNULL, 
+                    stderr=subprocess.DEVNULL,
+                    cwd=cwd,
+                    check=True
+                )
+                is_repo = True
+            except Exception:
+                is_repo = False
+        
+        _io_cache["git_is_repo"] = is_repo
         _io_cache["last_check"] = t
 
 
@@ -457,7 +471,7 @@ def is_git_installed() -> bool:
 
 
 def is_git_repo(path: Path | None = None) -> bool:
-    """Check if the path (or CWD) is a valid git repo root."""
+    """Check if the path (or CWD) is a part of a git repo."""
     p = path or Path.cwd()
     
     # Use cache if path is CWD (or None)
@@ -467,7 +481,19 @@ def is_git_repo(path: Path | None = None) -> bool:
             return _io_cache["git_is_repo"]
             
     # Fallback for explicit path or cache miss
-    return (p / ".git").exists()
+    if is_git_installed():
+        try:
+            subprocess.run(
+                ["git", "rev-parse", "--is-inside-work-tree"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                cwd=p,
+                check=True
+            )
+            return True
+        except Exception:
+            return False
+    return False
 
 
 def init_git_repo(path: Path | None = None) -> tuple[bool, str]:
