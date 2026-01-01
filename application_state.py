@@ -577,6 +577,7 @@ def change_working_directory(new_path: str):
             core.force_io_cache_refresh()
             refresh_project_files()
             load_fileset()
+            load_presets()
             
             initial_session = create_session()
             state.active_session_id = initial_session.id
@@ -614,10 +615,28 @@ def save_fileset():
     _save_json(FILESET_PATH, data)
 
 def load_presets():
-    state.presets = _load_json(PRESETS_PATH, {})
+    # Check for CWD-specific presets first
+    cwd_presets = core.load_cwd_data(PRESETS_PATH)
+    if cwd_presets is not None:
+        state.presets = cwd_presets
+        return
+
+    # Check for legacy global presets to migrate
+    raw = _load_json(PRESETS_PATH, {})
+    # Legacy check: if values look like preset objects [{"files": [...]}]
+    is_legacy = False
+    for v in raw.values():
+        if isinstance(v, dict) and "files" in v and isinstance(v["files"], list):
+            is_legacy = True
+            break
+            
+    if is_legacy:
+        state.presets = raw
+    else:
+        state.presets = {}
 
 def save_presets():
-    _save_json(PRESETS_PATH, state.presets)
+    core.save_cwd_data(PRESETS_PATH, state.presets)
 
 def build_file_tree(paths: list[Path], root: Path) -> dict:
     """Build a file tree structure from a list of paths."""
