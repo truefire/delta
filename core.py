@@ -996,6 +996,7 @@ def generate(
     ask_mode: bool = False,
     plan_mode: bool = False,
     cancel_event: threading.Event | None = None,
+    on_stream_start: Callable[[], None] | None = None,
 ) -> str:
     """Generate LLM response for the given files and prompt."""
     output_func = output_func_override or print
@@ -1065,6 +1066,9 @@ def generate(
     soft_limit_chars = int((config.output_sharding_limit * TOKENS_PER_CHAR_ESTIMATE) * config.sharding_ratio)
 
     logger.info(f"Generating with model: {config.model}")
+
+    if on_stream_start:
+        on_stream_start()
 
     try:
         for shard_idx in range(config.max_shards):
@@ -2398,6 +2402,7 @@ def _execute_attempt(
     on_validation_start: Callable[[str], None] | None = None,
     on_validation_success: Callable[[], None] | None = None,
     confirmation_callback: Callable[[dict[str, int], dict[str, str]], bool] | None = None,
+    on_stream_start: Callable[[], None] | None = None,
 ) -> tuple[bool, str | None, str | None, str | None]:
     """Execute a single modification attempt.
     
@@ -2413,7 +2418,8 @@ def _execute_attempt(
             output_func_override=output_func,
             raw_stream_output_func=stream_func,
             conversation_history=history,
-            cancel_event=cancel_event
+            cancel_event=cancel_event,
+            on_stream_start=on_stream_start
         )
     except CancelledError:
         raise
@@ -2543,6 +2549,7 @@ def process_request(
     on_validation_start: Callable[[str], None] | None = None,
     on_validation_success: Callable[[], None] | None = None,
     confirmation_callback: Callable[[dict[str, int], dict[str, str]], bool] | None = None,
+    on_llm_start: Callable[[], None] | None = None,
 ) -> dict:
     """
     Unified process loop for modifying files based on a prompt.
@@ -2612,7 +2619,8 @@ def process_request(
 
             generate(validated_files, prompt, output_func_override=output_func,
                     raw_stream_output_func=stream_func, conversation_history=history,
-                    ask_mode=True, plan_mode=plan_mode, cancel_event=cancel_event)
+                    ask_mode=True, plan_mode=plan_mode, cancel_event=cancel_event,
+                    on_stream_start=on_llm_start)
             return make_result(True, None, "Planning complete." if plan_mode else "Ask mode complete.")
         except CancelledError as e:
             return make_result(False, None, str(e) or "Cancelled.")
@@ -2650,7 +2658,8 @@ def process_request(
                     ambiguous_mode, allow_new_files,
                     on_file_added, on_diff_failure, on_validation_failure,
                     on_validation_start, on_validation_success,
-                    confirmation_callback
+                    confirmation_callback,
+                    on_stream_start=on_llm_start
                 )
                 
                 if sess_backup_id:

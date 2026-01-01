@@ -307,6 +307,12 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
                 "session_id": session_id
             })
 
+        def on_llm_start():
+            state.gui_queue.put({
+                "type": "start_response",
+                "session_id": session_id
+            })
+
         def on_file_added(path: Path):
             state.gui_queue.put({
                 "type": "file_added",
@@ -353,6 +359,7 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
             on_validation_start=on_validation_start,
             on_validation_success=on_validation_success,
             confirmation_callback=confirmation_callback,
+            on_llm_start=on_llm_start,
         )
 
         if result.get("success"):
