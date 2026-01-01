@@ -637,49 +637,123 @@ def build_file_tree(paths: list[Path], root: Path) -> dict:
         target_node["_files"].append((parts[-1], file_path))
     return tree
 
-def _scan_worker():
-    """Worker function for file scanning."""
-    try:
-        cwd = Path.cwd()
-        new_paths = []
+scan_queue = queue.Queue()
+tree_lock = threading.Lock()
+_scan_thread_started = False
 
-        for root, dirs, files in os.walk(str(cwd)):
-            # Prune hidden directories
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d not in DEFAULT_HIDDEN]
-            
-            root_path = Path(root)
-            for f in files:
-                if f.startswith('.') or f in DEFAULT_HIDDEN:
-                    continue
-                    
-                full_path = root_path / f
-                try:
-                    rel = full_path.relative_to(cwd)
-                    new_paths.append(rel)
-                except ValueError:
-                    pass
+def _folder_scan_worker():
+    """Worker that processes scan requests from the queue."""
+    while True:
+        path = scan_queue.get()
+        try:
+            _scan_folder_impl(path)
+        except Exception as e:
+            log_message(f"Error scanning {path}: {e}")
+        finally:
+            scan_queue.task_done()
+            if scan_queue.empty():
+                state.is_scanning = False
 
-        new_paths.sort(key=lambda p: str(p).lower())
-        
-        new_tree = build_file_tree(new_paths, cwd)
-        
-        state.file_paths = new_paths
-        state.file_tree = new_tree
-        state.view_tree_dirty = True
-    except Exception as e:
-        log_message(f"Error scanning files: {e}")
-    finally:
-        state.is_scanning = False
-
-def refresh_project_files():
-    """Scan and refresh project files in background."""
-    core.clear_stats_cache()
-    state.stats_dirty = True
-    if state.is_scanning:
+def _scan_folder_impl(folder_path: Path):
+    cwd = Path.cwd()
+    
+    # Check if folder still valid
+    if not folder_path.exists() or not folder_path.is_dir():
         return
 
+    # List content
+    files = []
+    dirs = []
+    
+    try:
+        with os.scandir(str(folder_path)) as it:
+            for entry in it:
+                if entry.name.startswith('.') or entry.name in DEFAULT_HIDDEN:
+                    continue
+                if entry.is_file():
+                    files.append(entry.name)
+                elif entry.is_dir():
+                    dirs.append(entry.name)
+    except OSError:
+        return
+
+    # Sort
+    files.sort(key=lambda s: s.lower())
+    dirs.sort(key=lambda s: s.lower())
+
+    # Update Tree safely
+    with tree_lock:
+        # Traverse to node
+        node = state.file_tree
+        
+        try:
+            if folder_path == cwd:
+                parts = []
+            else:
+                parts = folder_path.relative_to(cwd).parts
+        except ValueError:
+            return # Path outside CWD
+
+        # Build path to node
+        for part in parts:
+            if "_children" not in node:
+                node["_children"] = {}
+            if part not in node["_children"]:
+                node["_children"][part] = {"_files": [], "_children": {}, "_scanned": False}
+            node = node["_children"][part]
+
+        # Update node content
+        node_files = []
+        existing_paths = set(state.file_paths)
+        
+        for f in files:
+            full_path = folder_path / f
+            node_files.append((f, full_path))
+            try:
+                rel_path = full_path.relative_to(cwd)
+                if rel_path not in existing_paths:
+                    state.file_paths.append(rel_path)
+            except ValueError:
+                pass
+
+        node["_files"] = node_files
+        
+        # Ensure dirs exist in children
+        if "_children" not in node:
+            node["_children"] = {}
+            
+        for d in dirs:
+            if d not in node["_children"]:
+                node["_children"][d] = {"_files": [], "_children": {}, "_scanned": False}
+        
+        node["_scanned"] = True
+        node["_scanning"] = False
+        
+    state.view_tree_dirty = True
+
+def queue_scan_request(path: Path):
+    """Queue a folder for scanning."""
     state.is_scanning = True
-    threading.Thread(target=_scan_worker, daemon=True).start()
+    scan_queue.put(path)
+
+def refresh_project_files():
+    """Start scanning infrastructure and refresh root."""
+    global _scan_thread_started
+    
+    core.clear_stats_cache()
+    state.stats_dirty = True
+    
+    if not _scan_thread_started:
+        threading.Thread(target=_folder_scan_worker, daemon=True).start()
+        _scan_thread_started = True
+
+    # Clear tree for refresh
+    with tree_lock:
+        state.file_tree = {"_files": [], "_children": {}, "_scanned": False}
+        state.file_paths = []
+
+    # Scan Root
+    queue_scan_request(Path.cwd())
 
 def toggle_file_selection(path: Path, selected: bool):
     """Toggle file selection."""
