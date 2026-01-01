@@ -114,6 +114,6 @@ delta config --open          # Open AppData folder
 
 ## Why not use ____ instead?
 
-Other tools such as Claude Code work pretty good these days -- use them if they fit your use case better.
+Other tools such as Claude Code work pretty good these days, especially for "unsupervised" work -- use them if they fit your use case better.
 
-(TODO)
+When I want to remain in the loop, I find delta allows me to code faster, cheaper, and with less frustration and mistakes compared to those.
