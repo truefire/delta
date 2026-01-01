@@ -2532,13 +2532,14 @@ def render_context_manager():
                      })
 
         # Virtualize rendering
+        row_height = imgui.get_frame_height()
         clipper = imgui.ListClipper()
-        clipper.begin(len(visible_rows))
+        clipper.begin(len(visible_rows), row_height)
         
         while clipper.step():
             for i in range(clipper.display_start, clipper.display_end):
                 row = visible_rows[i]
-                imgui.table_next_row()
+                imgui.table_next_row(0, row_height)
                 imgui.table_next_column()
                 
                 # Manual indentation
