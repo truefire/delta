@@ -26,10 +26,19 @@ Contributions are welcome. There's no formal submission process, but use common 
 
 ## Architecture and Philosophy
 
-Before diving into the code, please read the [ARCHITECTURE.md](ARCHITECTURE.md).
-Delta follows specific design patterns that differ from typical web-based AI tools:
+Before diving into the code, please read the [architecture doc](ARCHITECTURE.md).
+Delta follows specific design patterns that differ from typical web-based AI tools.
 
-- [TODO]
+- We use immediate mode rendering for the GUI. If you're more familiar with typical retained mode UI systems common in webdev, this will likely be unfamiliar to you.
+- Delta is designed as a human-in-the-loop tool. While some amount of agentic or unsupervised behavior isn't strictly forbidden, we prefer to be involved in the process so we can keep things in check. Keep this in mind when deciding on new features to submit.
+- To accommodate self-modification, we prefer the project to be built out of "mid-sized" files. Large files with little modularity bloat  the context, while collections of many small files force us to make an excessive number of diffs to accomplish a task.
+
+## Vibe Coding
+
+Using delta to make changes to delta is encouraged -- much of the tool was built this way, and it's a good method of dogfooding.
+That said, PRs should still be reviewed by a human before submission.
+
+As a general rule, when using delta, it's recommended to review each change and fix/reject poor or misguided implementations to avoid a buildup of slop code. AI are not immune to tech debt.
 
 ## Testing
 
