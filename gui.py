@@ -2598,6 +2598,20 @@ def render_context_manager():
 
     imgui.end()
 
+def toggle_maximize_window():
+    """Toggle window maximization state (Windows only)."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.GetForegroundWindow()
+            style_flags = ctypes.windll.user32.GetWindowLongW(hwnd, -16)
+            if style_flags & 0x01000000:
+                ctypes.windll.user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            else:
+                ctypes.windll.user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
+        except:
+            pass
+
 def render_menu_bar():
     if imgui.begin_menu("File"):
         if imgui.menu_item("Sessions Manager", "Ctrl+O", False)[0]:
@@ -2665,17 +2679,7 @@ def render_menu_bar():
     imgui.same_line(start_x + button_width, spacing)
     imgui.set_cursor_pos_y(centering_y)
     if imgui.button("##max", imgui.ImVec2(button_width, text_height)):
-        if sys.platform == "win32":
-            try:
-                import ctypes
-                hwnd = ctypes.windll.user32.GetForegroundWindow()
-                style_flags = ctypes.windll.user32.GetWindowLongW(hwnd, -16)
-                if style_flags & 0x01000000:
-                    ctypes.windll.user32.ShowWindow(hwnd, 9)
-                else:
-                    ctypes.windll.user32.ShowWindow(hwnd, 3)
-            except:
-                pass
+        toggle_maximize_window()
 
     icon_col = imgui.get_color_u32(imgui.Col_.text)
     m_center = (imgui.get_item_rect_min() + imgui.get_item_rect_max()) / 2
@@ -2701,6 +2705,10 @@ def render_menu_bar():
 
     imgui.pop_style_color()
     imgui.pop_style_var()
+
+    # Double-click empty space to toggle maximize
+    if imgui.is_window_hovered() and not imgui.is_any_item_hovered() and imgui.is_mouse_double_clicked(imgui.MouseButton_.left):
+        toggle_maximize_window()
 
 def main_gui():
     """Main GUI function called each frame."""
