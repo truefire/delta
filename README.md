@@ -29,7 +29,7 @@ uv tool install git+https://github.com/truefire/delta-private
 # Contributing
 
 For users who want to contribute to the project, clone the repo and run `uv tool install` with the `--editable` flag:
-```
+```bash
 git clone git@github.com:truefire/delta-private.git
 cd delta-private
 uv tool install . --editable
