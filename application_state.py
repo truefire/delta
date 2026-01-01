@@ -201,6 +201,7 @@ class AppState:
     # Context manager state
     show_context_manager: bool = False
     context_search_text: str = ""
+    context_flatten_search: bool = False
     last_context_search: str = None
     view_tree: dict = field(default_factory=dict)
     view_tree_dirty: bool = True

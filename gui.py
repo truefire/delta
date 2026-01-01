@@ -2277,6 +2277,10 @@ def render_context_manager():
         render_tooltip("Filter files by name.")
 
         imgui.same_line()
+        _, state.context_flatten_search = imgui.checkbox("Flatten", state.context_flatten_search)
+        render_tooltip("Show search results as a flat list.")
+
+        imgui.same_line()
         if imgui.button("Refresh"):
             refresh_project_files()
         if imgui.is_item_hovered():
@@ -2322,7 +2326,9 @@ def render_context_manager():
     imgui.text("Files")
 
     # Search Mode
-    if state.context_search_text:
+    use_flat_search = state.context_search_text and state.context_flatten_search
+
+    if use_flat_search:
         imgui.begin_child("files_list", imgui.ImVec2(0, 0))
         table_flags = imgui.TableFlags_.row_bg | imgui.TableFlags_.borders_inner_v | imgui.TableFlags_.resizable | imgui.TableFlags_.scroll_y
         if imgui.begin_table("search_table", 3, table_flags):
@@ -2373,6 +2379,39 @@ def render_context_manager():
         imgui.end()
         return
 
+    # Tree Mode Filters
+    search_whitelist_dirs = None
+    search_whitelist_files = None
+    
+    if state.context_search_text:
+        search_whitelist_dirs = set()
+        search_whitelist_files = set()
+        
+        search_lower = state.context_search_text.lower()
+        is_glob = any(c in search_lower for c in "*?[]")
+        
+        cwd = Path.cwd()
+        
+        for f_rel in state.file_paths:
+            f_str = str(f_rel)
+            if is_glob:
+                match = fnmatch.fnmatch(f_str.lower(), search_lower)
+            else:
+                match = search_lower in f_str.lower()
+                
+            if match:
+                f_abs = cwd / f_rel
+                search_whitelist_files.add(f_abs)
+                
+                # Add parents
+                p = f_abs.parent
+                while True:
+                    search_whitelist_dirs.add(p)
+                    if p == cwd or len(p.parts) <= len(cwd.parts):
+                        break
+                    p = p.parent
+        search_whitelist_dirs.add(cwd)
+
     # Tree Mode
     imgui.begin_child("files_list", imgui.ImVec2(0, 0))
 
@@ -2382,8 +2421,17 @@ def render_context_manager():
         
         def render_tree_node(name, node, current_path):
             full_path = current_path / name
+            
+            if search_whitelist_dirs is not None and full_path not in search_whitelist_dirs:
+                return
+
             folder_key = str(full_path)
-            is_open = state.folder_states.get(folder_key, False)
+            
+            if search_whitelist_dirs is not None:
+                is_open = True
+                imgui.set_next_item_open(True, imgui.Cond_.always)
+            else:
+                is_open = state.folder_states.get(folder_key, False)
             
             # Lazy Load: Trigger scan if opened and not scanned
             if is_open and not node.get("_scanned") and not node.get("_scanning"):
@@ -2397,7 +2445,9 @@ def render_context_manager():
             if is_open: flags |= imgui.TreeNodeFlags_.default_open
             
             node_open = imgui.tree_node_ex(f"{name}/", flags)
-            state.folder_states[folder_key] = node_open
+            
+            if search_whitelist_dirs is None:
+                state.folder_states[folder_key] = node_open
             
             imgui.table_next_column()
             if node.get("_scanning"):
@@ -2410,6 +2460,9 @@ def render_context_manager():
                         
                 if node.get("_files"):
                     for fname, fpath in node["_files"]:
+                        if search_whitelist_files is not None and fpath not in search_whitelist_files:
+                            continue
+
                         imgui.table_next_row()
                         imgui.table_next_column()
                         
@@ -2439,6 +2492,9 @@ def render_context_manager():
              
              if "_files" in root_node:
                  for fname, fpath in sorted(root_node["_files"]):
+                     if search_whitelist_files is not None and fpath not in search_whitelist_files:
+                         continue
+
                      imgui.table_next_row()
                      imgui.table_next_column()
                      frel = to_relative(fpath)
