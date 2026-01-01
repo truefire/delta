@@ -88,6 +88,7 @@ class DiffViewerState:
     content: str = ""
     filename: str = "Unknown"
     is_creation: bool = False
+    suppress_new_label: bool = False
     hunks: list = field(default_factory=list)
     collapsed: bool = True
     reverted: set = field(default_factory=set)
@@ -280,7 +281,8 @@ class DiffViewer:
 
         def render_label():
             if self.state.is_creation:
-                imgui.text_colored(STYLE.get_imvec4("txt_suc"), f"{self.state.filename} (New File)")
+                label = f"{self.state.filename} (New File)" if not self.state.suppress_new_label else self.state.filename
+                imgui.text_colored(STYLE.get_imvec4("txt_suc"), label)
             else:
                 imgui.text(f"{self.state.filename}")
 
@@ -525,6 +527,7 @@ class ChatBubble:
     def __init__(self, role: str, message_id: int = 0):
         self.message = ChatMessage(role=role)
         self.message_id = message_id
+        self.pre_viewers = []
         self._line_buffer = ""
         self._in_code_block = False
         self._current_block_content = []
@@ -764,6 +767,10 @@ class ChatBubble:
                     imgui.set_clipboard_text(self.message.content)
                 imgui.end_popup()
         else:
+            for v in self.pre_viewers:
+                v.render()
+                imgui.spacing()
+
             self._render_content()
 
         # Render Loading Spinner

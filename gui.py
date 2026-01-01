@@ -31,7 +31,7 @@ from application_state import (
     add_to_cwd_history, load_cwd_history, delete_save, SESSIONS_DIR,
     tree_lock, queue_scan_request
 )
-from widgets import ChatBubble, DiffViewer, render_file_tree
+from widgets import ChatBubble, DiffViewer, render_file_tree, DiffHunk
 from styles import STYLE, apply_imgui_theme
 from window_helpers import yank_window, flash_screens
 
@@ -1217,6 +1217,22 @@ def render_settings_panel():
 
     imgui.separator()
 
+    imgui.text("Theme:")
+    imgui.same_line(80)
+    imgui.set_next_item_width(-1)
+    
+    themes = ["Light", "Dark"]
+    current_theme_idx = 1 if config.theme == "dark" else 0
+    changed, new_theme_idx = imgui.combo("##theme", current_theme_idx, themes)
+    if changed:
+        new_theme = themes[new_theme_idx].lower()
+        if new_theme != config.theme:
+            config.set_theme(new_theme)
+            STYLE.load(new_theme)
+            apply_imgui_theme(STYLE.dark)
+
+    imgui.separator()
+
     changed, state.backup_enabled = imgui.checkbox("Backup", state.backup_enabled)
     render_tooltip("Create a backup before applying any changes.")
     if changed:
@@ -1523,6 +1539,21 @@ def _render_group_manage_row(name: str):
     
     imgui.push_id(f"manage_{name}")
     
+    if imgui.small_button("Load"):
+        for f in state.selected_files:
+            state.file_checked[f] = False
+        
+        for f in group_files:
+            path = to_relative(Path(f))
+            if path.exists():
+                state.selected_files.add(path)
+                state.file_checked[path] = True
+        state.stats_dirty = True
+        save_fileset()
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Load this group into selection")
+    
+    imgui.same_line()
     if imgui.small_button("Update"):
         files_to_save = [str(f) for f in state.selected_files if state.file_checked.get(f, True)]
         state.presets[name] = {"files": files_to_save}
@@ -1820,23 +1851,20 @@ def perform_session_revert(session, index: int):
         cancel_generation(session.id)
         unqueue_session(session.id)
         
-    prompt_to_resend = None
-    
     if role == "user":
+        # Remove user bubble from history and put content in input for editing
         session.history = session.history[:index]
-        session.bubbles = session.bubbles[:index+1]
-        prompt_to_resend = target_bubble.content
+        session.bubbles = session.bubbles[:index]
+        session.input_text = target_bubble.content
     elif role == "assistant":
+        # Keep assistant bubble, clear input for new follow-up
         session.history = session.history[:index+1]
         session.bubbles = session.bubbles[:index+1]
+        session.input_text = ""
         
-    session.input_text = prompt_to_resend if prompt_to_resend else ""
     session.failed = False
     session.completed = (role == "assistant")
     session.current_bubble = None
-    
-    if role == "user" and prompt_to_resend:
-        submit_prompt(ask_mode=session.is_ask_mode)
 
 def render_chat_panel():
     tab_size = 28
@@ -1989,25 +2017,41 @@ def render_chat_panel():
     imgui.pop_style_color(3)
 
     has_active = any(s.is_generating for s in state.sessions.values())
+
+    # Buttons (System Prompt Toggle + Cancel All)
+    style = imgui.get_style()
+    window_padding = style.window_padding.x
+    window_width = imgui.get_window_width()
+    
+    sys_btn_text = "Hide System" if state.show_system_prompt else "Show System"
+    sys_w = imgui.calc_text_size(sys_btn_text).x + style.frame_padding.x * 2.0
+    
+    cancel_btn_text = "Cancel All"
+    cancel_w = 0
     if state.impl_queue or has_active:
-        button_text = "Cancel All"
-        text_size = imgui.calc_text_size(button_text)
-        style = imgui.get_style()
-        button_width = text_size.x + style.frame_padding.x * 2.0
+        cancel_w = imgui.calc_text_size(cancel_btn_text).x + style.frame_padding.x * 2.0
         
-        window_width = imgui.get_window_width()
-        window_padding = style.window_padding.x
-        
-        cursor_x = imgui.get_cursor_pos_x()
-        target_x = window_width - button_width - window_padding
-        
-        if target_x > cursor_x:
-            imgui.same_line(target_x)
-        else:
-            imgui.same_line()
-            
+    total_w = sys_w
+    if cancel_w > 0:
+        total_w += cancel_w + style.item_spacing.x
+
+    cursor_x = imgui.get_cursor_pos_x()
+    target_x = window_width - total_w - window_padding
+
+    if target_x > cursor_x:
+        imgui.same_line(target_x)
+    else:
+        imgui.same_line()
+
+    if imgui.button(sys_btn_text):
+        state.show_system_prompt = not state.show_system_prompt
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Toggle visibility of the System Prompt at the top of the chat.")
+
+    if cancel_w > 0:
+        imgui.same_line()
         imgui.push_style_color(imgui.Col_.button, STYLE.get_imvec4("btn_cncl"))
-        if imgui.button(button_text):
+        if imgui.button(cancel_btn_text):
             cancel_all_tasks()
         imgui.pop_style_color()
         if imgui.is_item_hovered():
@@ -2041,6 +2085,62 @@ def render_chat_session(session):
     if history_height < 50: history_height = 50
 
     imgui.begin_child("chat_history", imgui.ImVec2(0, history_height), child_flags=imgui.ChildFlags_.borders)
+
+    if state.show_system_prompt:
+        checked_files = sorted([str(f) for f in state.selected_files if state.file_checked.get(f, True)])
+        
+        # Calculate key with mtimes to ensure content freshness
+        file_state_key = []
+        for f in checked_files:
+            try:
+                mtime = Path(f).stat().st_mtime
+            except Exception:
+                mtime = 0
+            file_state_key.append((f, mtime))
+
+        current_key = (tuple(file_state_key), session.is_ask_mode, session.is_planning, config.extra_system_prompt)
+        
+        if state.cached_sys_key != current_key or state.cached_sys_bubble is None:
+            sys_msg = core.build_system_message(
+                checked_files, 
+                ask_mode=session.is_ask_mode, 
+                plan_mode=session.is_planning
+            )
+            state.cached_sys_bubble = ChatBubble("system", -1)
+            state.cached_sys_bubble.update(sys_msg)
+            
+            # Create Viewers for each file
+            for i, fpath in enumerate(checked_files):
+                if core.is_image_file(fpath):
+                    continue
+                    
+                try:
+                    content = core.file_cache.get_or_read(fpath)
+                    
+                    # Manually create DiffViewer to show file content as "New File" (Green)
+                    # We bypass string parsing to allow safe display of any content
+                    dv = DiffViewer(content="", block_state={"collapsed": True}, viewer_id=i, filename_hint=fpath)
+                    
+                    # Patch State
+                    dv.state.filename = fpath
+                    dv.state.is_creation = True
+                    dv.state.suppress_new_label = True
+                    dv.state.hunks = [DiffHunk(type="change", old="", new=content)]
+                    dv.state.change_indices = [0]
+                    
+                    state.cached_sys_bubble.pre_viewers.append(dv)
+                    
+                except Exception as e:
+                    # If read fails, just skip viewer
+                    pass
+
+            state.cached_sys_key = current_key
+        
+        state.cached_sys_bubble.render()
+        
+        imgui.spacing()
+        imgui.separator()
+        imgui.spacing()
 
     revert_target_index = -1
 

@@ -226,6 +226,7 @@ class AppState:
 
     # Sessions / Saves
     show_sessions_window: bool = False
+    show_system_prompt: bool = False
     selected_save_name: str | None = None
     new_save_name: str = ""
     last_input_time: float = 0.0
@@ -269,6 +270,10 @@ class AppState:
     # Caches
     backup_list: list = None
     drag_data: Any = None
+    
+    # System Prompt Cache
+    cached_sys_bubble: Any = None
+    cached_sys_key: Any = None
 
 # Global state instance
 state: AppState = AppState()
