@@ -114,6 +114,7 @@ Examples:
     config_parser.add_argument("--system-prompt", help="Set the extra system prompt")
     config_parser.add_argument("--path", action="store_true", help="Print the AppData folder path")
     config_parser.add_argument("--open", action="store_true", help="Open the AppData folder")
+    config_parser.add_argument("--settings", action="store_true", help="Open settings.json in default text editor")
 
     args = parser.parse_args()
 
@@ -415,7 +416,17 @@ Examples:
             if sys.platform == "win32":
                 os.startfile(path)
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", path])
+                subprocess.Popen(["open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
-                subprocess.Popen(["xdg-open", path])
+                subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            print(f"Opened: {path}")
+
+        if args.settings:
+            path = str(APP_DATA_DIR / "settings.json")
+            if sys.platform == "win32":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else:
+                subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print(f"Opened: {path}")

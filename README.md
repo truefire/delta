@@ -102,7 +102,7 @@ delta review 0..3            # Review changes over the last 3 sessions
 delta review --git           # Review uncommitted git changes
 
 # Configuration
-delta config --system-prompt "Always use type hints"
+delta config --settings      # Open settings.json in default text editor
 delta config --open          # Open AppData folder
 ```
 
@@ -122,6 +122,19 @@ delta config --open          # Open AppData folder
 | `-V, --verbosity` | Output level (verbose/low/diff/silent)                    |
 | `-p, --preset` | Use files from a specific preset                          |
 | `--dry-run` | Perform a dry run (exit without applying changes)         |
+
+## LLM Providers
+
+Delta uses the standard OpenAI client library, meaning it is compatible with any OpenAI-compatible API. This includes:
+
+- **OpenRouter**
+- **OpenAI**
+- **Anthropic** (via adapter or OpenRouter)
+- **Local LLMs** (via Ollama, LM Studio, vLLM, etc.)
+
+To configure the `api_base_url`, `api_key`, and custom model definitions:
+- **GUI**: Tools -> API Settings
+- **CLI**: `delta config --settings`
 
 ## Why not use <other tool> instead?
 
