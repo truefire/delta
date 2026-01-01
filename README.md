@@ -26,6 +26,17 @@ Then install Delta:
 uv tool install git+https://github.com/truefire/delta-private
 ```
 
+# Contributing
+
+For users who want to contribute to the project, clone the repo and run `uv sync` to install the dependencies:
+```
+git clone git@github.com:truefire/delta-private.git
+cd delta-private
+uv sync
+```
+
+See [this page](CONTRIBUTING.md) for more details.
+
 # Usage
 
 Delta should always be run from within your project folder, as it will have permission to write to any file within the directory from which it is run (including subdirectories). Delta was built to be a "second monitor" GUI alongside your primary editor/IDE, but it can also be used from the command line if that fits your use case better.
