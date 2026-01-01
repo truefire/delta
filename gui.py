@@ -2466,8 +2466,11 @@ def render_context_manager():
         imgui.table_setup_column("Name", imgui.TableColumnFlags_.width_stretch)
         imgui.table_setup_column("Status", imgui.TableColumnFlags_.width_fixed, 80)
         
-        def render_tree_node(name, node, current_path):
-            full_path = current_path / name
+        # Flatten tree into visible list
+        visible_rows = []
+        
+        def build_flat_tree(node_name, node, current_path, depth):
+            full_path = current_path / node_name
             
             if search_whitelist_dirs is not None and full_path not in search_whitelist_dirs:
                 return
@@ -2476,84 +2479,116 @@ def render_context_manager():
             
             if search_whitelist_dirs is not None:
                 is_open = True
-                imgui.set_next_item_open(True, imgui.Cond_.always)
             else:
                 is_open = state.folder_states.get(folder_key, False)
             
-            # Lazy Load: Trigger scan if opened and not scanned
+            # Lazy Load check (only if open)
             if is_open and not node.get("_scanned") and not node.get("_scanning"):
                 node["_scanning"] = True
                 queue_scan_request(full_path, priority=0)
+
+            visible_rows.append({
+                "type": "folder",
+                "name": node_name,
+                "key": folder_key,
+                "is_open": is_open,
+                "depth": depth,
+                "scanning": node.get("_scanning", False),
+                "path": full_path
+            })
             
-            imgui.table_next_row()
-            imgui.table_next_column()
-            
-            flags = imgui.TreeNodeFlags_.span_all_columns | imgui.TreeNodeFlags_.open_on_arrow
-            if is_open: flags |= imgui.TreeNodeFlags_.default_open
-            
-            node_open = imgui.tree_node_ex(f"{name}/", flags)
-            
-            if search_whitelist_dirs is None:
-                state.folder_states[folder_key] = node_open
-            
-            imgui.table_next_column()
-            if node.get("_scanning"):
-                imgui.text_colored(STYLE.get_imvec4("queued"), "Scanning...")
-            
-            if node_open:
+            if is_open:
                 if node.get("_children"):
                     for child_name, child_node in sorted(node["_children"].items(), key=lambda x: x[0].lower()):
-                        render_tree_node(child_name, child_node, full_path)
+                        build_flat_tree(child_name, child_node, full_path, depth + 1)
                         
                 if node.get("_files"):
-                    for fname, fpath in node["_files"]:
+                    for fname, fpath in sorted(node["_files"]):
                         if search_whitelist_files is not None and fpath not in search_whitelist_files:
                             continue
+                        visible_rows.append({
+                            "type": "file",
+                            "name": fname,
+                            "path": fpath,
+                            "depth": depth + 1
+                        })
 
-                        imgui.table_next_row()
-                        imgui.table_next_column()
-                        
-                        frel = to_relative(fpath)
-                        sel = frel in state.selected_files
-                        
-                        imgui.push_id(str(fpath))
-                        if imgui.checkbox("", sel)[0]:
-                            toggle_file_selection(frel, not sel)
-                            if not sel: state.file_checked[frel] = True
-                        imgui.pop_id()
-                        
-                        imgui.same_line()
-                        imgui.text(fname)
-                        
-                        imgui.table_next_column()
-                
-                imgui.tree_pop()
-
-        # Render Root Tree
         with tree_lock:
              root_node = state.file_tree
              
              if "_children" in root_node:
                  for dname, dnode in sorted(root_node["_children"].items(), key=lambda x: x[0].lower()):
-                     render_tree_node(dname, dnode, Path.cwd())
+                     build_flat_tree(dname, dnode, Path.cwd(), 0)
              
              if "_files" in root_node:
                  for fname, fpath in sorted(root_node["_files"]):
                      if search_whitelist_files is not None and fpath not in search_whitelist_files:
                          continue
+                     visible_rows.append({
+                         "type": "file",
+                         "name": fname,
+                         "path": fpath,
+                         "depth": 0
+                     })
 
-                     imgui.table_next_row()
-                     imgui.table_next_column()
-                     frel = to_relative(fpath)
-                     sel = frel in state.selected_files
-                     imgui.push_id(str(fpath))
-                     if imgui.checkbox("", sel)[0]:
-                         toggle_file_selection(frel, not sel)
-                         if not sel: state.file_checked[frel] = True
-                     imgui.pop_id()
-                     imgui.same_line()
-                     imgui.text(fname)
-                     imgui.table_next_column()
+        # Virtualize rendering
+        clipper = imgui.ListClipper()
+        clipper.begin(len(visible_rows))
+        
+        while clipper.step():
+            for i in range(clipper.display_start, clipper.display_end):
+                row = visible_rows[i]
+                imgui.table_next_row()
+                imgui.table_next_column()
+                
+                # Manual indentation
+                indent_w = float(row["depth"]) * 20.0
+                if indent_w > 0:
+                    imgui.indent(indent_w)
+                
+                if row["type"] == "folder":
+                    flags = imgui.TreeNodeFlags_.span_all_columns | imgui.TreeNodeFlags_.open_on_arrow
+                    
+                    if search_whitelist_dirs is not None:
+                        imgui.set_next_item_open(True, imgui.Cond_.always)
+                    else:
+                        imgui.set_next_item_open(row["is_open"], imgui.Cond_.always)
+
+                    imgui.push_id(row["key"])
+                    is_node_open = imgui.tree_node_ex(f"{row['name']}/", flags)
+                    
+                    if search_whitelist_dirs is None and imgui.is_item_toggled_open():
+                         state.folder_states[row["key"]] = not row["is_open"]
+                    
+                    if is_node_open:
+                        imgui.tree_pop()
+                        
+                    imgui.pop_id()
+                        
+                    imgui.table_next_column()
+                    if row["scanning"]:
+                        imgui.text_colored(STYLE.get_imvec4("queued"), "Scanning...")
+
+                else:
+                    # File
+                    fpath = row["path"]
+                    msg = row["name"]
+                    
+                    frel = to_relative(fpath)
+                    sel = frel in state.selected_files
+                    
+                    imgui.push_id(str(fpath))
+                    if imgui.checkbox("", sel)[0]:
+                        toggle_file_selection(frel, not sel)
+                        if not sel: state.file_checked[frel] = True
+                    imgui.pop_id()
+                    
+                    imgui.same_line()
+                    imgui.text(msg)
+                    imgui.table_next_column()
+
+                if indent_w > 0:
+                    imgui.unindent(indent_w)
 
         imgui.end_table()
 
