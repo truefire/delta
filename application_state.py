@@ -922,13 +922,13 @@ def sync_config_from_settings():
     except ValueError: pass
 
     try:
-        config.output_sharding_limit = int(state.output_sharding_limit)
+        config.set_output_sharding_limit(int(state.output_sharding_limit))
     except ValueError: pass
     try:
-        config.max_shards = int(state.max_shards)
+        config.set_max_shards(int(state.max_shards))
     except ValueError: pass
     try:
-        config.sharding_ratio = float(state.sharding_ratio)
+        config.set_sharding_ratio(float(state.sharding_ratio))
     except ValueError: pass
 
     try:
@@ -946,7 +946,7 @@ def sync_config_from_settings():
         config.set_validation_failure_behavior(val_behaviors[state.validation_failure_behavior_idx])
 
     focus_modes = ["off", "flash", "yank"]
-    config.focus_mode = focus_modes[state.focus_mode_idx]
+    config.set_focus_mode(focus_modes[state.focus_mode_idx])
 
     focus_triggers = ["task", "queue"]
     config.set_focus_trigger(focus_triggers[state.focus_trigger_idx])
