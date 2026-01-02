@@ -156,3 +156,7 @@ To configure the `api_base_url`, `api_key`, and custom model definitions:
 Other tools such as Claude Code work pretty good these days, especially for "unsupervised" work -- use them if they fit your use case better.
 
 When I want to remain in the loop, I find delta allows me to code faster, cheaper, and with less frustration and mistakes compared to those.
+
+## License
+
+This project is licensed under the [MIT License](LICENSE).
