@@ -29,8 +29,14 @@ _TOOL_DIR = Path(__file__).parent.resolve()
 
 def is_image_file(path: Path | str) -> bool:
     """Check if the path looks like an image file."""
+    path_str = str(path).lower()
+
+    # SVGs are textual, treat as text file to allow editing via diffs
+    if path_str.endswith(".svg", ".jpg", ".jpeg", ".png"):
+        return False
+
     # Ensure common types are recognized even if OS map is incomplete
-    if str(path).lower().endswith(".webp"):
+    if path_str.endswith(".webp"):
         return True
 
     guess, _ = mimetypes.guess_type(str(path))

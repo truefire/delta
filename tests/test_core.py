@@ -284,6 +284,7 @@ def test_is_image_file():
     assert is_image_file("stuff.webp")
     assert not is_image_file("script.py")
     assert not is_image_file("README.md")
+    assert not is_image_file("vector.svg")
 
 def test_validate_files(temp_cwd):
     (temp_cwd / "good.py").touch()
