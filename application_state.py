@@ -192,6 +192,7 @@ class AppState:
     verify_changes: bool = config.verify_changes
     require_approval: bool = config.require_approval
     ambiguous_mode_idx: int = 0
+    validation_failure_behavior_idx: int = 0
 
     # Fuzzy Match settings
     diff_fuzzy_lines_threshold: str = "0.95"
@@ -872,6 +873,10 @@ def sync_settings_from_config():
     if config.default_ambiguous_mode in modes:
         state.ambiguous_mode_idx = modes.index(config.default_ambiguous_mode)
 
+    val_behaviors = ["correct", "undo", "retry", "ignore"]
+    if config.validation_failure_behavior in val_behaviors:
+        state.validation_failure_behavior_idx = val_behaviors.index(config.validation_failure_behavior)
+
     focus_modes = ["off", "flash", "yank"]
     fm = config.focus_mode if isinstance(config.focus_mode, str) else ("flash" if config.focus_mode else "off")
     state.focus_mode_idx = focus_modes.index(fm) if fm in focus_modes else 0
@@ -922,6 +927,10 @@ def sync_config_from_settings():
         val = int(state.diff_fuzzy_max_bad_lines)
         config.set_diff_fuzzy_max_bad_lines(max(0, val))
     except ValueError: pass
+
+    val_behaviors = ["correct", "undo", "retry", "ignore"]
+    if state.validation_failure_behavior_idx < len(val_behaviors):
+        config.set_validation_failure_behavior(val_behaviors[state.validation_failure_behavior_idx])
 
     focus_modes = ["off", "flash", "yank"]
     config.focus_mode = focus_modes[state.focus_mode_idx]

@@ -1388,13 +1388,22 @@ def render_settings_panel():
     changed, state.ambiguous_mode_idx = imgui.combo("##ambiguous", state.ambiguous_mode_idx, ambiguous_modes)
     if changed:
         modes = ["replace_all", "ignore", "fail"]
-        if state.ambiguous_mode_idx < len(modes):
+    if state.ambiguous_mode_idx < len(modes):
              config.set_default_ambiguous_mode(modes[state.ambiguous_mode_idx])
     render_tooltip("Strategy when a search block matches multiple locations in a file.")
 
+    imgui.text("Validation Fail:")
+    imgui.same_line()
+    imgui.set_next_item_width(120)
+    val_behaviors = ["Correct", "Undo", "Retry", "Ignore"]
+    changed, state.validation_failure_behavior_idx = imgui.combo("##valfail", state.validation_failure_behavior_idx, val_behaviors)
+    render_tooltip("Action when the validation command fails.")
+    if changed:
+        sync_config_from_settings()
+
     imgui.separator()
     imgui.text("Fuzzy Match:")
-    
+
     imgui.same_line()
     imgui.text("Line Thresh:")
     imgui.same_line()

@@ -275,6 +275,8 @@ class DeltaToolConfig:
         self.diff_fuzzy_lines_threshold = _settings.get("diff_fuzzy_lines_threshold", 0.95)
         self.diff_fuzzy_max_bad_lines = _settings.get("diff_fuzzy_max_bad_lines", 1)
 
+        self.validation_failure_behavior = _settings.get("validation_failure_behavior", "correct")
+
         # New global settings
         self.verify_changes = _settings.get("verify_changes", False)
         self.require_approval = _settings.get("require_approval", False)
@@ -405,6 +407,11 @@ class DeltaToolConfig:
     def set_sharding_ratio(self, ratio: float) -> None:
         self.sharding_ratio = ratio
         _settings["sharding_ratio"] = ratio
+        _save_settings(_settings)
+
+    def set_validation_failure_behavior(self, behavior: str) -> None:
+        self.validation_failure_behavior = behavior
+        _settings["validation_failure_behavior"] = behavior
         _save_settings(_settings)
 
 
@@ -2505,8 +2512,28 @@ def _execute_attempt(
         valid, error_msg = _run_validation(validation_cmd, validation_timeout)
         if not valid:
             if on_validation_failure:
-                on_validation_failure(error_msg)
-            return False, backup_id, f"Validation error: {error_msg}", f"Fix this error:\n\n{error_msg}"
+                on_validation_failure(f"[{config.validation_failure_behavior.upper()}] {error_msg}")
+
+            behavior = config.validation_failure_behavior
+
+            if behavior == "ignore":
+                logger.info("Validation failed but behavior is 'ignore'. Proceeding as success.")
+                return True, backup_id, None, None
+
+            elif behavior == "undo":
+                # Revert changes
+                logger.info("Validation failed. Undoing changes and aborting.")
+                undo_last_changes()
+                raise GenerationError(f"Validation failed (Undo): {error_msg}")
+
+            elif behavior == "retry":
+                # Revert changes and retry prompt
+                logger.info("Validation failed. Undoing changes and retrying.")
+                undo_last_changes()
+                return False, None, f"Validation failed (Retry): {error_msg}", None
+
+            else:
+                return False, backup_id, f"Validation error: {error_msg}", f"Fix this error:\n\n{error_msg}"
         
         if on_validation_success:
             on_validation_success()
