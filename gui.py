@@ -1478,7 +1478,7 @@ def render_system_prompt_popup():
         imgui.end_popup()
 
 def _render_group_row(name: str):
-    if name not in state.presets:
+    if name not in state.presets or name == "__active":
         return
 
     group_data = state.presets[name]
@@ -1534,7 +1534,7 @@ def _render_group_row(name: str):
     imgui.pop_id()
 
 def _render_group_manage_row(name: str):
-    if name not in state.presets:
+    if name not in state.presets or name == "__active":
         return
 
     group_data = state.presets[name]

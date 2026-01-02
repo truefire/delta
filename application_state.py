@@ -18,7 +18,6 @@ from core import APP_DATA_DIR, config, AVAILABLE_MODELS, MAX_PROMPT_HISTORY, fil
 from widgets import ChatBubble
 
 # Persistence files
-FILESET_PATH = str(APP_DATA_DIR / "filesets.json")
 PROMPT_HISTORY_PATH = str(APP_DATA_DIR / "prompt_history.json")
 CWD_HISTORY_PATH = str(APP_DATA_DIR / "cwd_history.json")
 PRESETS_PATH = str(APP_DATA_DIR / "selection_presets.json")
@@ -581,8 +580,8 @@ def change_working_directory(new_path: str):
             file_cache.clear()
             core.force_io_cache_refresh()
             refresh_project_files()
-            load_fileset()
             load_presets()
+            load_fileset()
             
             initial_session = create_session()
             state.active_session_id = initial_session.id
@@ -592,15 +591,15 @@ def change_working_directory(new_path: str):
             log_message(f"Error changing directory: {e}")
 
 def load_fileset():
-    data = _load_json(FILESET_PATH, {})
-    cwd = str(Path.cwd())
-    if data.get("cwd") == cwd:
-        state.selected_files = {to_relative(Path(p)) for p in data.get("files", [])}
-        state.validation_cmd = data.get("validation_cmd", "")
-        state.validate_command_enabled = data.get("validate_command_enabled", True)
+    # Setup state from active preset if exists
+    active_data = state.presets.get("__active", {})
+    if active_data:
+        state.selected_files = {to_relative(Path(p)) for p in active_data.get("files", [])}
+        state.validation_cmd = active_data.get("validation_cmd", "")
+        state.validate_command_enabled = active_data.get("validate_command_enabled", True)
 
         state.file_checked = {}
-        checked_state = data.get("checked", {})
+        checked_state = active_data.get("checked", {})
         for p_str, is_checked in checked_state.items():
             try:
                 p = to_relative(Path(p_str))
@@ -608,16 +607,40 @@ def load_fileset():
                     state.file_checked[p] = is_checked
             except Exception:
                 pass
+    else:
+        # Check for legacy filesets.json migration
+        legacy_path = APP_DATA_DIR / "filesets.json"
+        if legacy_path.exists():
+            try:
+                data = _load_json(str(legacy_path), {})
+                cwd = str(Path.cwd())
+                if data.get("cwd") == cwd:
+                    state.selected_files = {to_relative(Path(p)) for p in data.get("files", [])}
+                    state.validation_cmd = data.get("validation_cmd", "")
+                    state.validate_command_enabled = data.get("validate_command_enabled", True)
+
+                    state.file_checked = {}
+                    checked_state = data.get("checked", {})
+                    for p_str, is_checked in checked_state.items():
+                        try:
+                            p = to_relative(Path(p_str))
+                            if p in state.selected_files:
+                                state.file_checked[p] = is_checked
+                        except Exception: pass
+                    
+                    save_fileset() # Migrate to new format
+                    legacy_path.unlink() # Delete old file
+            except Exception: pass
 
 def save_fileset():
     data = {
-        "cwd": str(Path.cwd()),
         "files": [str(p) for p in state.selected_files],
         "validation_cmd": state.validation_cmd,
         "validate_command_enabled": state.validate_command_enabled,
         "checked": {str(p): v for p, v in state.file_checked.items() if p in state.selected_files}
     }
-    _save_json(FILESET_PATH, data)
+    state.presets["__active"] = data
+    save_presets()
 
 def load_presets():
     # Check for CWD-specific presets first

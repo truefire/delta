@@ -123,6 +123,7 @@ Examples:
         return
 
     # Load saved file state
+    load_presets()
     load_fileset()
 
     # Create callback functions for CLI output
