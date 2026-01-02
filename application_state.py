@@ -488,6 +488,12 @@ def load_individual_session(save_name: str, session_idx: int):
     except Exception as e:
         log_message(f"Error importing session: {e}")
 
+def quicksave_session():
+    """Perform a quicksave with timestamp."""
+    name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    save_state(name)
+    log_message(f"Quicksaved sessions to: {name}")
+
 def delete_save(name: str):
     """Delete a save file."""
     filename = SESSIONS_DIR / f"{name}.json"

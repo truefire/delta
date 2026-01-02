@@ -28,8 +28,8 @@ from application_state import (
     save_fileset, load_presets, save_presets, setup_logging, log_message,
     sync_settings_from_config, sync_config_from_settings,
     refresh_project_files, toggle_file_selection, toggle_folder_selection, to_relative,
-    add_to_cwd_history, load_cwd_history, delete_save, SESSIONS_DIR,
-    tree_lock, queue_scan_request
+    add_to_cwd_history, load_cwd_history, SESSIONS_DIR,
+    tree_lock, queue_scan_request, quicksave_session
 )
 from widgets import ChatBubble, DiffViewer, render_file_tree, DiffHunk
 from styles import STYLE, apply_imgui_theme
@@ -2026,6 +2026,9 @@ def render_chat_panel():
     window_padding = style.window_padding.x
     window_width = imgui.get_window_width()
     
+    qs_btn_text = "Quicksave Tabs"
+    qs_w = imgui.calc_text_size(qs_btn_text).x + style.frame_padding.x * 2.0
+
     sys_btn_text = "Hide System" if state.show_system_prompt else "Show System"
     sys_w = imgui.calc_text_size(sys_btn_text).x + style.frame_padding.x * 2.0
     
@@ -2034,7 +2037,7 @@ def render_chat_panel():
     if state.impl_queue or has_active:
         cancel_w = imgui.calc_text_size(cancel_btn_text).x + style.frame_padding.x * 2.0
         
-    total_w = sys_w
+    total_w = qs_w + style.item_spacing.x + sys_w
     if cancel_w > 0:
         total_w += cancel_w + style.item_spacing.x
 
@@ -2045,6 +2048,13 @@ def render_chat_panel():
         imgui.same_line(target_x)
     else:
         imgui.same_line()
+
+    if imgui.button(qs_btn_text):
+        quicksave_session()
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Instantly save all open sessions with a timestamp.")
+
+    imgui.same_line()
 
     if imgui.button(sys_btn_text):
         state.show_system_prompt = not state.show_system_prompt
@@ -2750,6 +2760,8 @@ def render_menu_bar():
     if imgui.begin_menu("File"):
         if imgui.menu_item("Sessions Manager", "Ctrl+O", False)[0]:
             state.show_sessions_window = True
+        if imgui.menu_item("Quicksave", "Ctrl+S", False)[0]:
+            quicksave_session()
         imgui.separator()
         if imgui.menu_item("Restart", "Ctrl+R", False)[0]:
             try_exit_app("restart")
@@ -2851,6 +2863,8 @@ def main_gui():
     if io.key_ctrl:
         if imgui.is_key_pressed(imgui.Key.o):
             state.show_sessions_window = not state.show_sessions_window
+        if imgui.is_key_pressed(imgui.Key.s):
+            quicksave_session()
         if imgui.is_key_pressed(imgui.Key.r):
             try_exit_app("restart")
 
