@@ -287,6 +287,33 @@ class DiffViewer:
                 imgui.text(f"{self.state.filename}")
 
         def render_right():
+            # Apply button
+            imgui.same_line(imgui.get_window_width() - 190)
+            if imgui.button(f"Reapply##apply_{self.state.id}", imgui.ImVec2(0, 20)):
+                try:
+                    import core
+                    import application_state
+                    
+                    # Reconstruct wrappable content
+                    prefix = f"{self.filename_hint}\n" if self.filename_hint else ""
+                    info = self.language_hint if self.language_hint else ""
+                    wrapped = f"{prefix}```{info}\n{self.state.content}\n```"
+                    
+                    core.apply_diffs(wrapped)
+                    application_state.log_message(f"Manually applied diff to {self.state.filename}")
+                    
+                    # Refresh
+                    core.file_cache.invalidate(self.state.filename)
+                    if hasattr(application_state, 'state'):
+                         application_state.state.stats_dirty = True
+                    
+                except Exception as e:
+                    import application_state
+                    application_state.log_message(f"Failed to apply diff: {e}")
+
+            if imgui.is_item_hovered():
+                imgui.set_tooltip("Attempt to apply this diff again")
+
             # Navigation controls on the right
             num_changes = len(self.state.change_indices)
             if num_changes > 0:
