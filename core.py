@@ -32,11 +32,11 @@ def is_image_file(path: Path | str) -> bool:
     path_str = str(path).lower()
 
     # SVGs are textual, treat as text file to allow editing via diffs
-    if path_str.endswith(".svg") or path_str.endswith(".jpg") or path_str.endswith(".jpeg") or path_str.endswith(".png"):
+    if path_str.endswith(".svg"):
         return False
 
     # Ensure common types are recognized even if OS map is incomplete
-    if path_str.endswith(".webp"):
+    if path_str.endswith(".webp") or path_str.endswith(".jpg") or path_str.endswith(".jpeg") or path_str.endswith(".png"):
         return True
 
     guess, _ = mimetypes.guess_type(str(path))
