@@ -232,6 +232,7 @@ def handle_queue_event(event: dict):
             state.cached_whitelist_dirs = event.get("dirs")
             state.cached_whitelist_files = event.get("files")
             state.is_searching = False
+            state.view_tree_dirty = True
 
 def ensure_user_bubble(session, text: str):
     """Ensure the latest message is a user bubble with the given text."""
@@ -2417,8 +2418,11 @@ def render_logs_panel():
 
     imgui.end_child()
 
-def _search_worker(query_id: int, search_text: str, file_paths: list):
+def _search_worker(query_id: int, search_text: str):
     try:
+        with tree_lock:
+            file_paths = list(state.file_paths)
+
         search_lower = search_text.lower()
         is_glob = any(c in search_lower for c in "*?[]")
         
@@ -2481,14 +2485,83 @@ def trigger_context_search():
     state.search_query_id += 1
     state.is_searching = True
     
-    with tree_lock:
-        current_files = list(state.file_paths)
-
     threading.Thread(
         target=_search_worker,
-        args=(state.search_query_id, state.context_search_text, current_files),
+        args=(state.search_query_id, state.context_search_text),
         daemon=True
     ).start()
+
+def _rebuild_context_rows():
+    """Rebuild the flattened list of tree rows for the context manager."""
+    visible_rows = []
+    
+    search_whitelist_dirs = state.cached_whitelist_dirs
+    search_whitelist_files = state.cached_whitelist_files
+
+    def build_flat_tree(node_name, node, current_path, depth):
+        full_path = current_path / node_name
+        
+        if search_whitelist_dirs is not None and full_path not in search_whitelist_dirs:
+            return
+
+        folder_key = str(full_path)
+        
+        if search_whitelist_dirs is not None:
+            is_open = True
+        else:
+            is_open = state.folder_states.get(folder_key, False)
+        
+        # Lazy Load check (only if open)
+        if is_open and not node.get("_scanned") and not node.get("_scanning"):
+            node["_scanning"] = True
+            queue_scan_request(full_path, priority=0)
+
+        visible_rows.append({
+            "type": "folder",
+            "name": node_name,
+            "key": folder_key,
+            "is_open": is_open,
+            "depth": depth,
+            "scanning": node.get("_scanning", False),
+            "path": full_path
+        })
+        
+        if is_open:
+            if node.get("_children"):
+                for child_name, child_node in sorted(node["_children"].items(), key=lambda x: x[0].lower()):
+                    build_flat_tree(child_name, child_node, full_path, depth + 1)
+                    
+            if node.get("_files"):
+                for fname, fpath in sorted(node["_files"]):
+                    if search_whitelist_files is not None and fpath not in search_whitelist_files:
+                        continue
+                    visible_rows.append({
+                        "type": "file",
+                        "name": fname,
+                        "path": fpath,
+                        "depth": depth + 1
+                    })
+
+    with tree_lock:
+         root_node = state.file_tree
+         
+         if "_children" in root_node:
+             for dname, dnode in sorted(root_node["_children"].items(), key=lambda x: x[0].lower()):
+                 build_flat_tree(dname, dnode, Path.cwd(), 0)
+         
+         if "_files" in root_node:
+             for fname, fpath in sorted(root_node["_files"]):
+                 if search_whitelist_files is not None and fpath not in search_whitelist_files:
+                     continue
+                 visible_rows.append({
+                     "type": "file",
+                     "name": fname,
+                     "path": fpath,
+                     "depth": 0
+                 })
+    
+    state.cached_context_rows = visible_rows
+    state.view_tree_dirty = False
 
 def render_context_manager():
     if not state.show_context_manager:
@@ -2622,69 +2695,10 @@ def render_context_manager():
         imgui.table_setup_column("Status", imgui.TableColumnFlags_.width_fixed, 80)
         
         # Flatten tree into visible list
-        visible_rows = []
-        
-        def build_flat_tree(node_name, node, current_path, depth):
-            full_path = current_path / node_name
+        if state.view_tree_dirty or state.cached_context_rows is None:
+            _rebuild_context_rows()
             
-            if search_whitelist_dirs is not None and full_path not in search_whitelist_dirs:
-                return
-
-            folder_key = str(full_path)
-            
-            if search_whitelist_dirs is not None:
-                is_open = True
-            else:
-                is_open = state.folder_states.get(folder_key, False)
-            
-            # Lazy Load check (only if open)
-            if is_open and not node.get("_scanned") and not node.get("_scanning"):
-                node["_scanning"] = True
-                queue_scan_request(full_path, priority=0)
-
-            visible_rows.append({
-                "type": "folder",
-                "name": node_name,
-                "key": folder_key,
-                "is_open": is_open,
-                "depth": depth,
-                "scanning": node.get("_scanning", False),
-                "path": full_path
-            })
-            
-            if is_open:
-                if node.get("_children"):
-                    for child_name, child_node in sorted(node["_children"].items(), key=lambda x: x[0].lower()):
-                        build_flat_tree(child_name, child_node, full_path, depth + 1)
-                        
-                if node.get("_files"):
-                    for fname, fpath in sorted(node["_files"]):
-                        if search_whitelist_files is not None and fpath not in search_whitelist_files:
-                            continue
-                        visible_rows.append({
-                            "type": "file",
-                            "name": fname,
-                            "path": fpath,
-                            "depth": depth + 1
-                        })
-
-        with tree_lock:
-             root_node = state.file_tree
-             
-             if "_children" in root_node:
-                 for dname, dnode in sorted(root_node["_children"].items(), key=lambda x: x[0].lower()):
-                     build_flat_tree(dname, dnode, Path.cwd(), 0)
-             
-             if "_files" in root_node:
-                 for fname, fpath in sorted(root_node["_files"]):
-                     if search_whitelist_files is not None and fpath not in search_whitelist_files:
-                         continue
-                     visible_rows.append({
-                         "type": "file",
-                         "name": fname,
-                         "path": fpath,
-                         "depth": 0
-                     })
+        visible_rows = state.cached_context_rows
 
         # Virtualize rendering
         row_height = imgui.get_frame_height()
@@ -2715,6 +2729,7 @@ def render_context_manager():
                     
                     if search_whitelist_dirs is None and imgui.is_item_toggled_open():
                          state.folder_states[row["key"]] = not row["is_open"]
+                         state.view_tree_dirty = True
                     
                     if is_node_open:
                         imgui.tree_pop()

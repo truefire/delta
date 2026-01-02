@@ -212,6 +212,7 @@ class AppState:
     cached_whitelist_dirs: set = None
     cached_whitelist_files: set = None
     cached_flat_filtered_files: list = None
+    cached_context_rows: list = None
 
     # Performance Caching
     stats_dirty: bool = True
