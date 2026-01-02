@@ -1,6 +1,8 @@
+<img src="https://github.com/user-attachments/assets/65364d23-209a-49e5-ad96-fd9ab6516382" height="300px">
+
 # Overview
 
-Delta is a minimal LLM-powered code editor. It is not an IDE, nor is it an agent. It is a tool that you point at some files, tell it to make changes, and it makes them.
+Hi! Delta is a minimal LLM-powered code editor. It is not an IDE, nor is it an agent. It is a tool that you point at some files, tell it to make changes, and it makes them.
 
 This project was born from a frustration with existing LLM-powered code editors constantly getting stuck in tool-calls, unable to navigate a project's structure, performing poorly because they bloated their context with irrelevant files, etc. Delta can only do two things: Make new files or edit existing ones. This is all you need 99% of the time.
 
