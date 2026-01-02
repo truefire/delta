@@ -63,7 +63,8 @@ Use the GitHub Issues tab to report bugs. Please include:
   - The LLM model name
   - The LLM provider
   - The entire conversation history
-  - If possible, your session file (found in `delta config --open` -> sessions)
+  - Any relevant log files (found in the logs folder of `delta config --open`)
+  - If possible, your session file (found in the sessions folder of `delta config --open`)
 
 ## License
 
