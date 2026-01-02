@@ -47,7 +47,6 @@ def mock_app_data(tmp_path):
          patch("core.BACKUP_DIR", str(temp_app_data / "backups")), \
          patch("application_state.APP_DATA_DIR", temp_app_data), \
          patch("application_state.SESSIONS_DIR", temp_app_data / "sessions"), \
-         patch("application_state.FILESET_PATH", str(temp_app_data / "filesets.json")), \
          patch("application_state.PROMPT_HISTORY_PATH", str(temp_app_data / "prompt_history.json")), \
          patch("application_state.CWD_HISTORY_PATH", str(temp_app_data / "cwd_history.json")), \
          patch("application_state.PRESETS_PATH", str(temp_app_data / "selection_presets.json")):

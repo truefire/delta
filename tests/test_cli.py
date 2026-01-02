@@ -43,8 +43,7 @@ def mock_processing(monkeypatch):
 @pytest.fixture(autouse=True)
 def mock_persistence_paths(tmp_path):
     """Patch persistence paths to temporary files."""
-    with patch("application_state.FILESET_PATH", str(tmp_path / "filesets.json")), \
-         patch("application_state.PRESETS_PATH", str(tmp_path / "presets.json")):
+    with patch("application_state.PRESETS_PATH", str(tmp_path / "presets.json")):
         yield
 
 @pytest.fixture(autouse=True)

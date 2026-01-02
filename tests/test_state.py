@@ -5,7 +5,7 @@ from application_state import (
     save_state, load_state, toggle_file_selection, toggle_folder_selection,
     sync_settings_from_config, sync_config_from_settings,
     save_fileset, load_fileset, get_saves_list, load_individual_session,
-    change_working_directory
+    change_working_directory, load_presets, save_presets
 )
 import core
 
@@ -178,8 +178,8 @@ def test_config_sync():
 def test_fileset_persistence(temp_cwd):
     # Hack global paths
     import application_state
-    orig_path = application_state.FILESET_PATH
-    application_state.FILESET_PATH = str(temp_cwd / "filesets_test.json")
+    orig_path = application_state.PRESETS_PATH
+    application_state.PRESETS_PATH = str(temp_cwd / "presets_test.json")
     
     state.selected_files = {Path("a.py")}
     state.file_checked = {Path("a.py"): True}
@@ -190,7 +190,10 @@ def test_fileset_persistence(temp_cwd):
     # Clear
     state.selected_files = set()
     state.validation_cmd = ""
+    state.presets = {}
     
+    # Load
+    load_presets()
     load_fileset()
     
     # Relative path handling is used in load_fileset. 
@@ -199,7 +202,7 @@ def test_fileset_persistence(temp_cwd):
     assert state.validation_cmd == "pytest"
     assert state.file_checked.get(Path("a.py")) is True
     
-    application_state.FILESET_PATH = orig_path
+    application_state.PRESETS_PATH = orig_path
 
 def test_change_working_directory(temp_cwd):
     subdir = temp_cwd / "subdir"
