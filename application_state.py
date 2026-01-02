@@ -272,6 +272,18 @@ class AppState:
     backup_list: list = None
     drag_data: Any = None
     
+    # Update UI state
+    show_update_popup: bool = False
+    update_status: str = ""
+    update_in_progress: bool = False
+    can_update: bool = False
+    update_func: Any = None
+
+    # Auth Popup state
+    show_auth_popup: bool = False
+    auth_request_data: dict | None = None
+    auth_input_text: str = ""
+    
     # System Prompt Cache
     cached_sys_bubble: Any = None
     cached_sys_key: Any = None

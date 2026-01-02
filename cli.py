@@ -5,6 +5,8 @@ import os
 import subprocess
 import threading
 import glob as globlib
+import time
+import json
 from pathlib import Path
 import logging
 
@@ -115,6 +117,10 @@ Examples:
     config_parser.add_argument("--path", action="store_true", help="Print the AppData folder path")
     config_parser.add_argument("--open", action="store_true", help="Open the AppData folder")
     config_parser.add_argument("--settings", action="store_true", help="Open settings.json in default text editor")
+
+    # askpass command (hidden helper)
+    askpass_parser = subparsers.add_parser("askpass", help=argparse.SUPPRESS)
+    askpass_parser.add_argument("prompt_text", nargs="?", default="Authentication Required")
 
     args = parser.parse_args()
 
@@ -431,3 +437,42 @@ Examples:
             else:
                 subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             print(f"Opened: {path}")
+
+    elif args.command == "askpass":
+        # Handle authentication request from git/ssh
+        ipc_dir = APP_DATA_DIR / "ipc"
+        ipc_dir.mkdir(parents=True, exist_ok=True)
+        
+        req_id = f"auth_{int(time.time()*1000)}"
+        req_file = ipc_dir / f"{req_id}.req"
+        res_file = ipc_dir / f"{req_id}.res"
+        
+        # Write request
+        try:
+            with open(req_file, "w", encoding="utf-8") as f:
+                json.dump({"id": req_id, "prompt": args.prompt_text}, f)
+        except Exception as e:
+            # Fallback if IPC fails
+            return
+
+        # Wait for response (timeout 60s)
+        start_time = time.time()
+        while time.time() - start_time < 60:
+            if res_file.exists():
+                try:
+                    # Give writer a moment to close
+                    time.sleep(0.1) 
+                    with open(res_file, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    res_file.unlink() # Cleanup
+                    print(data.get("password", ""))
+                    sys.exit(0)
+                except Exception:
+                    pass
+            time.sleep(0.5)
+            
+        # Timeout
+        try:
+             if req_file.exists(): req_file.unlink()
+        except: pass
+        sys.exit(1)

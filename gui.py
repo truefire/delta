@@ -1,6 +1,7 @@
 """GUI implementation for Delta Tool."""
 import math
 import sys
+import shutil
 import subprocess
 import threading
 import time
@@ -8,6 +9,7 @@ import queue
 import json
 import os
 import fnmatch
+import stat
 from pathlib import Path
 from datetime import datetime
 
@@ -616,6 +618,7 @@ def render_api_settings_popup():
     """Render the API settings popup."""
     if state.show_api_settings_popup:
         imgui.open_popup("API Settings")
+        state.show_api_settings_popup = False
         
     if imgui.begin_popup_modal("API Settings", None, imgui.WindowFlags_.always_auto_resize)[0]:
         inputs = state.api_settings_inputs
@@ -672,7 +675,6 @@ def render_api_settings_popup():
                 
                 sync_settings_from_config()
                 
-                state.show_api_settings_popup = False
                 imgui.close_current_popup()
                 log_message("API settings saved.")
                 
@@ -681,7 +683,6 @@ def render_api_settings_popup():
                 
         imgui.same_line()
         if imgui.button("Cancel", imgui.ImVec2(120, 0)):
-            state.show_api_settings_popup = False
             imgui.close_current_popup()
             
         imgui.end_popup()
@@ -1487,6 +1488,321 @@ def render_system_prompt_popup():
         if imgui.button("Cancel", imgui.ImVec2(120, 0)):
             state.show_system_prompt_popup = False
             imgui.close_current_popup()
+            
+        imgui.end_popup()
+
+def _create_askpass_wrapper():
+    """Create a wrapper script for git/ssh to invoke delta askpass."""
+    ipc_dir = APP_DATA_DIR / "ipc"
+    ipc_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Determine how to invoke delta
+    # If running as script: python path/to/delta.py
+    # If installed/frozen: path/to/delta (executable)
+    
+    wrapper_path = ipc_dir / ("askpass.bat" if sys.platform == "win32" else "askpass.sh")
+    
+    delta_cmd = sys.argv[0]
+    full_cmd = ""
+    
+    if delta_cmd.endswith(".py"):
+        # Python script
+        py_exe = sys.executable
+        full_cmd = f'"{py_exe}" "{delta_cmd}" askpass'
+    else:
+        # Executable/Shim
+        full_cmd = f'"{delta_cmd}" askpass'
+
+    if sys.platform == "win32":
+        content = f'@echo off\n{full_cmd} %*\n'
+    else:
+        content = f'#!/bin/sh\n{full_cmd} "$@"\n'
+
+    with open(wrapper_path, "w", encoding="utf-8") as f:
+        f.write(content)
+        
+    if sys.platform != "win32":
+        st = os.stat(wrapper_path)
+        os.chmod(wrapper_path, st.st_mode | stat.S_IEXEC)
+        
+    return str(wrapper_path)
+
+def _perform_git_pull():
+    state.update_in_progress = True
+    state.update_status = "Pulling changes from remote..."
+    
+    def worker():
+        try:
+            askpass_script = _create_askpass_wrapper()
+            
+            env = os.environ.copy()
+            env["GIT_ASKPASS"] = askpass_script
+            env["SSH_ASKPASS"] = askpass_script
+            env["SSH_ASKPASS_REQUIRE"] = "force"
+            env["DISPLAY"] = ":0" # Fake display to trick SSH into thinking it can askpass
+            
+            # Use subprocess directly to inject env
+            tool_dir = core._TOOL_DIR
+            proc = subprocess.run(
+                ["git", "pull"],
+                cwd=tool_dir,
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True
+            )
+            
+            success = (proc.returncode == 0)
+            out = proc.stdout
+            
+            state.update_in_progress = False
+            if success:
+                if "Already up to date" in out:
+                    state.update_status = "No new changes found."
+                else:
+                    state.update_status = "Update successful! Restart required."
+                state.can_update = False
+                state.update_func = None
+            else:
+                state.update_status = f"Git pull failed:\n{out}"
+                
+        except Exception as e:
+            state.update_in_progress = False
+            state.update_status = f"Error during update: {e}"
+    
+    threading.Thread(target=worker, daemon=True).start()
+
+def _perform_uv_upgrade(tool_name):
+    state.update_in_progress = True
+    state.update_status = f"Upgrading '{tool_name}' via uv..."
+    
+    def worker():
+        success, out = core.run_command(f"uv tool upgrade {tool_name}")
+        state.update_in_progress = False
+        if success:
+            if "Already up to date" in out:
+                state.update_status = "No new changes found."
+            else:
+                state.update_status = "Update successful! Restart required."
+            state.can_update = False
+            state.update_func = None
+        else:
+            state.update_status = f"uv upgrade failed:\n{out}"
+            
+    threading.Thread(target=worker, daemon=True).start()
+
+def _check_updates_worker():
+    tool_dir = core._TOOL_DIR
+    
+    # 1. Check Git
+    if (tool_dir / ".git").exists():
+        ok, out = core.run_command("git remote -v", cwd=tool_dir)
+        if ok and "origin" in out:
+            ok_f, _ = core.run_command("git fetch", cwd=tool_dir)
+            ok_s, status_out = core.run_command("git status -uno", cwd=tool_dir)
+
+            print(status_out)
+            if "behind" in status_out:
+                state.update_status = "Git repository detected.\nNew commits available."
+                state.can_update = True
+                state.update_func = _perform_git_pull
+            elif "up to date" in status_out:
+                state.update_status = "Git repository detected.\nAlready up to date."
+                state.can_update = False
+            elif "branch is ahead" in status_out:
+                state.update_status = "Git repository detected.\nYou have local commits.\nWould you like to attempt an update?"
+                state.can_update = True
+                state.update_func = _perform_git_pull
+            else:
+                state.update_status = "Git repository detected.\nBranch status unclear."
+                state.can_update = True
+                state.update_func = _perform_git_pull
+            return
+    
+    # 2. Check UV
+    if shutil.which("uv"):
+        ok, out = core.run_command("uv tool list")
+        if ok:
+            found_name = None
+            for line in out.splitlines():
+                if "delta" in line or "deltatool" in line:
+                    found_name = line.split()[0]
+                    break
+            
+            if found_name:
+                state.update_status = f"Detected 'uv' installation ('{found_name}')."
+                # uv upgrade handles already-updated state gracefully
+                state.can_update = True
+                state.update_func = lambda: _perform_uv_upgrade(found_name)
+                return
+
+    state.update_status = "Could not detect updatable installation.\n(Not a git repo, nor found in `uv tool list`)"
+    state.can_update = False
+
+def check_for_updates():
+    state.show_update_popup = True
+    state.update_status = "Checking installation method..."
+    state.can_update = False
+    state.update_func = None
+    state.update_in_progress = False
+    
+    threading.Thread(target=_check_updates_worker, daemon=True).start()
+
+def render_update_popup():
+    if state.show_update_popup:
+        imgui.open_popup("Check for Updates")
+        state.show_update_popup = False
+        
+    if imgui.begin_popup_modal("Check for Updates", None, imgui.WindowFlags_.always_auto_resize)[0]:
+        imgui.text(state.update_status)
+        imgui.separator()
+        
+        if state.update_in_progress:
+            imgui.text_colored(STYLE.get_imvec4("queued"), "Working...")
+        else:
+            if "Update successful" in state.update_status:
+                if imgui.button("Restart Now", imgui.ImVec2(120, 0)):
+                    try_exit_app("restart")
+                    imgui.close_current_popup()
+                imgui.same_line()
+                if imgui.button("Restart Later", imgui.ImVec2(120, 0)):
+                    imgui.close_current_popup()
+            else:
+                if state.can_update and state.update_func:
+                    if imgui.button("Update Now", imgui.ImVec2(120, 0)):
+                        state.update_func()
+                    imgui.same_line()
+                
+                if imgui.button("Close", imgui.ImVec2(120, 0)):
+                    imgui.close_current_popup()
+                
+        imgui.end_popup()
+
+def poll_auth_request():
+    """Check for authentication requests from background processes."""
+    if state.show_auth_popup or state.auth_request_data is not None:
+        return # Already showing
+
+    ipc_dir = APP_DATA_DIR / "ipc"
+    if not ipc_dir.exists():
+        return
+
+    # Find .req files
+    try:
+        req_files = list(ipc_dir.glob("*.req"))
+        if req_files:
+            # Take the first one
+            req_file = req_files[0]
+            try:
+                with open(req_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                
+                state.auth_request_data = data
+                state.auth_request_data["_file"] = req_file # Store path for cleanup/reply
+                state.auth_input_text = ""
+                state.show_auth_popup = True
+            except Exception:
+                # If corrupt, delete it so we don't loop
+                try: req_file.unlink()
+                except: pass
+    except Exception:
+        pass
+
+def render_auth_popup():
+    if state.show_auth_popup:
+        imgui.open_popup("Authentication Required")
+        state.show_auth_popup = False
+    
+    if imgui.begin_popup_modal("Authentication Required", None, imgui.WindowFlags_.always_auto_resize)[0]:
+        is_submitted = state.auth_request_data and state.auth_request_data.get("_status") == "submitted"
+        
+        if is_submitted:
+            imgui.text("Authentication submitted.")
+            imgui.separator()
+            
+            if state.update_in_progress:
+                imgui.text_colored(STYLE.get_imvec4("queued"), "Processing...")
+                imgui.text_colored(STYLE.get_imvec4("fg_dim"), state.update_status)
+            else:
+                status_text = state.update_status if state.update_status else "Process completed."
+                is_success = "success" in status_text.lower()
+                
+                if is_success:
+                    imgui.text_colored(STYLE.get_imvec4("txt_suc"), status_text)
+                elif "fail" in status_text.lower() or "error" in status_text.lower():
+                     imgui.text_colored(STYLE.get_imvec4("btn_cncl"), status_text)
+                else:
+                     imgui.text(status_text)
+                
+                imgui.spacing()
+                imgui.separator()
+                
+                if is_success and "restart" in status_text.lower():
+                    if imgui.button("Restart Now", imgui.ImVec2(120, 0)):
+                        state.auth_request_data = None
+                        state.auth_input_text = ""
+                        try_exit_app("restart")
+                        imgui.close_current_popup()
+                        
+                    imgui.same_line()
+                    if imgui.button("Restart Later", imgui.ImVec2(120, 0)):
+                        state.auth_request_data = None
+                        state.auth_input_text = ""
+                        imgui.close_current_popup()
+                else:
+                    if imgui.button("Dismiss", imgui.ImVec2(120, 0)):
+                        state.auth_request_data = None
+                        state.auth_input_text = ""
+                        imgui.close_current_popup()
+        else:
+            prompt = state.auth_request_data.get("prompt", "Password required:") if state.auth_request_data else "Password required:"
+            imgui.text(prompt)
+            imgui.spacing()
+            
+            imgui.set_next_item_width(300)
+            confirm = False
+            changed, state.auth_input_text = imgui.input_text("##auth_input", state.auth_input_text, imgui.InputTextFlags_.password | imgui.InputTextFlags_.enter_returns_true)
+            if changed: confirm = True
+            
+            if not imgui.is_any_item_active():
+                imgui.set_keyboard_focus_here(-1)
+
+            imgui.separator()
+            
+            if imgui.button("OK", imgui.ImVec2(120, 0)) or confirm:
+                # Write response
+                try:
+                    req_path = state.auth_request_data.get("_file")
+                    if req_path:
+                        # Construct response path matches req path stem
+                        res_path = req_path.with_suffix(".res")
+                        with open(res_path, "w", encoding="utf-8") as f:
+                            json.dump({"password": state.auth_input_text}, f)
+                        
+                        req_path.unlink()
+                        log_message("Authentication submitted.")
+                        if state.auth_request_data:
+                            state.auth_request_data["_status"] = "submitted"
+                except Exception as e:
+                    log_message(f"Auth response failed: {e}")
+                    state.auth_request_data = None
+                    state.auth_input_text = ""
+                    imgui.close_current_popup()
+            
+            imgui.same_line()
+            if imgui.button("Cancel", imgui.ImVec2(120, 0)):
+                # On cancel, maybe write empty or just delete req file?
+                # If we delete req file, CLI waits until timeout then fails.
+                # Faster to write empty json?
+                try:
+                    req_path = state.auth_request_data.get("_file")
+                    if req_path:
+                        req_path.unlink() # Just remove request, let CLI timeout
+                except: pass
+                
+                state.auth_request_data = None
+                state.auth_input_text = ""
+                imgui.close_current_popup()
             
         imgui.end_popup()
 
@@ -2815,6 +3131,8 @@ def render_menu_bar():
             state.show_context_manager = True
         if imgui.menu_item("Backups", "", False)[0]:
             state.show_backup_history = True
+        if imgui.menu_item("Check for Updates", "", False)[0]:
+            check_for_updates()
         if imgui.menu_item("Toggle Theme", "", False)[0]:
             toggle_theme()
         imgui.end_menu()
@@ -2886,6 +3204,11 @@ def render_menu_bar():
 def main_gui():
     """Main GUI function called each frame."""
     state.frame_count += 1
+    
+    # Poll auth (throttled)
+    if state.frame_count % 30 == 0:
+        poll_auth_request()
+
     io = imgui.get_io()
     if io.key_ctrl:
         if imgui.is_key_pressed(imgui.Key.o):
@@ -2911,6 +3234,8 @@ def main_gui():
     render_close_tab_popup()
     render_exit_confirmation_popup()
     render_system_prompt_popup()
+    render_update_popup()
+    render_auth_popup()
 
 def create_docking_layout() -> tuple:
     splits = []
