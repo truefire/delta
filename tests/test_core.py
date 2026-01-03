@@ -57,6 +57,30 @@ qux
         import re
         assert re.match(regex, target), "Regex should match tabs/spaces variations"
 
+    def test_parse_triple_backticks_in_diff(self):
+        stub = """
+markdown_doc.md
+[SEARCH]
+Here is some code:
+```python
+print("old")
+```
+[REPLACE]
+Here is some code:
+```python
+print("new")
+```
+[END]
+"""
+        diff_text = wrap_in_code_block(stub_to_diff(stub))
+        
+        diffs = parse_diffs(diff_text)
+        assert len(diffs) == 1
+        assert diffs[0]["filename"] == "markdown_doc.md"
+        assert '```python' in diffs[0]["original"]
+        assert 'print("old")' in diffs[0]["original"]
+        assert 'print("new")' in diffs[0]["new"]
+
 class TestDiffApplication:
     def test_exact_application(self, temp_cwd):
         f = temp_cwd / "test.txt"

@@ -19,7 +19,15 @@ except ImportError:
     Myers = None
 
 from core import build_tolerant_regex, parse_diffs
+from pattern import code_block_pattern, plan_block_pattern
 from styles import STYLE
+
+
+# Generic code block pattern (match balanced backticks)
+generic_code_pattern = re.compile(
+    r"^\s*(`{3,})([^\n]*)\n(.*?)\n^\s*\1", 
+    re.MULTILINE | re.DOTALL
+)
 
 
 def render_viewer_header(
@@ -584,93 +592,10 @@ class ChatBubble:
         """Stream text into the bubble."""
         self.message.content += text
         self._content_dirty = True
-        self._process_stream(text)
 
     def flush(self):
-        """Flush any remaining buffered content."""
-        if self._line_buffer:
-            self._process_line(self._line_buffer)
-            self._line_buffer = ""
-            self._content_dirty = True
-
-    def _process_stream(self, text: str):
-        """Process streamed text line by line."""
-        self._line_buffer += text
-        while '\n' in self._line_buffer:
-            line, rest = self._line_buffer.split('\n', 1)
-            self._line_buffer = rest
-            self._process_line(line)
-
-    def _process_line(self, line: str):
-        """Process a single line."""
-        stripped = line.strip()
-
-        # Handle Plan Blocks
-        if stripped == '<<<<<<< PLAN' and not self._in_code_block:
-            self._in_plan_block = True
-            self._current_plan_content = []
-            return
-
-        if stripped == '>>>>>>> END' and self._in_plan_block:
-            # End plan block
-            plan_content = "\n".join(self._current_plan_content)
-            pv_id = self._current_plan_counter
-            
-            if pv_id not in self.message.plan_states:
-                self.message.plan_states[pv_id] = {"collapsed": False}
-                
-            pv = PlanViewer(plan_content, self.message.plan_states[pv_id], pv_id)
-            self.message.plan_viewers[pv_id] = pv
-            
-            self._in_plan_block = False
-            self._current_plan_content = []
-            self._current_plan_counter += 1
-            return
-            
-        if self._in_plan_block:
-            self._current_plan_content.append(line)
-            # Update existing plan viewer if it exists
-            if self._current_plan_counter in self.message.plan_viewers:
-                 plan_content = "\n".join(self._current_plan_content)
-                 self.message.plan_viewers[self._current_plan_counter].update_content(plan_content)
-            return
-
-        # Handle Code Blocks
-        if stripped.startswith('```'):
-            if self._in_code_block:
-                # End code block - check if it's a diff
-                block_content = "\n".join(self._current_block_content)
-                if "<<<<<<< SEARCH" in block_content:
-                    # Create a DiffViewer
-                    dv_id = self._current_block_counter
-                    if dv_id not in self.message.block_states:
-                        self.message.block_states[dv_id] = {"collapsed": True, "reverted": set()}
-                    dv = DiffViewer(block_content, self.message.block_states[dv_id], dv_id, self._filename_candidate, self._current_block_info)
-                    self.message.diff_viewers[dv_id] = dv
-
-                    # Add anchor
-                    self.message.anchors.append({
-                        "type": "diff",
-                        "label": f"diff: {dv.state.filename}"
-                    })
-
-                self._in_code_block = False
-                self._current_block_content = []
-                self._current_block_counter += 1
-                self._filename_candidate = None
-                self._current_block_info = None
-            else:
-                self._in_code_block = True
-                self._current_block_content = []
-                self._current_block_info = stripped[3:].strip()
-        elif self._in_code_block:
-            self._current_block_content.append(line)
-            # Update existing diff viewer if it exists
-            if self._current_block_counter in self.message.diff_viewers:
-                block_content = "\n".join(self._current_block_content)
-                self.message.diff_viewers[self._current_block_counter].update_content(block_content)
-        elif stripped:
-            self._filename_candidate = line
+        """Flush any remaining buffered content (No-op with new parser)."""
+        self._content_dirty = True
 
     def set_error_details(self, summary: str, raw_content: str):
         """Attach error details to this bubble."""
@@ -917,79 +842,110 @@ class ChatBubble:
                     imgui.end_popup()
 
     def _parse_content_segments(self) -> list:
-        """Parse content into renderable segments."""
+        """Parse content into renderable segments using regex."""
         segments = []
-        lines = self.message.content.split('\n')
-        current_text = []
+        text = self.message.content
+        pos = 0
         
-        in_code = False
-        code_content = []
-        code_id = 0
         dv_idx = 0
-        
-        in_plan = False
-        plan_content = []
         pv_idx = 0
+        code_idx = 0
 
-        for line in lines:
-            stripped = line.strip()
+        # We need to preserve viewers across potential re-parses during streaming
+        # but also handle structure changes. We rely on index stability.
+
+        while pos < len(text):
+            m_plan = plan_block_pattern.search(text, pos)
+            m_diff = code_block_pattern.search(text, pos)
+            m_code = generic_code_pattern.search(text, pos)
+
+            candidates = []
+            if m_plan: candidates.append((m_plan.start(), m_plan.end(), "plan", m_plan))
+            if m_diff: candidates.append((m_diff.start(), m_diff.end(), "diff", m_diff))
+            if m_code: candidates.append((m_code.start(), m_code.end(), "code", m_code))
+
+            candidates.sort(key=lambda x: x[0])
             
-            # PLAN handling
-            if stripped == '<<<<<<< PLAN' and not in_code:
-                # Flush text
-                if current_text:
-                    segments.append({"type": "text", "content": '\n'.join(current_text)})
-                    current_text = []
-                in_plan = True
-                continue
+            if not candidates:
+                remaining = text[pos:]
+                if remaining:
+                    segments.append({"type": "text", "content": remaining})
+                break
+            
+            # Select best match
+            # If Diff and Code start at same position, prefer Diff
+            best = candidates[0]
+            if len(candidates) > 1 and candidates[1][0] == best[0]:
+                if best[2] == "code" and candidates[1][2] == "diff":
+                    best = candidates[1]
 
-            if stripped == '>>>>>>> END' and in_plan:
-                # End plan
+            start, end, m_type, match = best
+            
+            # Add text before block
+            if start > pos:
+                segments.append({"type": "text", "content": text[pos:start]})
+            
+            if m_type == "plan":
+                # Ensure viewer exists
+                if pv_idx not in self.message.plan_states:
+                     self.message.plan_states[pv_idx] = {"collapsed": False}
+                
+                # Reconstruct content expected by PlanViewer
+                content = f"Title: {match.group(1).strip()}\nPrompt: {match.group(2).strip()}"
+
+                if pv_idx not in self.message.plan_viewers:
+                    self.message.plan_viewers[pv_idx] = PlanViewer(content, self.message.plan_states[pv_idx], pv_idx)
+                else:
+                    self.message.plan_viewers[pv_idx].update_content(content)
+                
                 segments.append({"type": "plan", "pv_id": pv_idx})
                 pv_idx += 1
-                in_plan = False
-                plan_content = [] # Reset, though captured by index
-                continue
                 
-            if in_plan:
-                plan_content.append(line)
-                continue
-
-            # CODE handling
-            if stripped.startswith('```'):
-                if in_code:
-                    # End code block
-                    block_content = '\n'.join(code_content)
-                    if "<<<<<<< SEARCH" in block_content and dv_idx in self.message.diff_viewers:
-                        # Flush text before diff
-                        if current_text:
-                            segments.append({"type": "text", "content": '\n'.join(current_text)})
-                            current_text = []
-                        segments.append({"type": "diff", "dv_id": dv_idx})
-                        dv_idx += 1
-                    else:
-                        # Regular code block
-                        if current_text:
-                            segments.append({"type": "text", "content": '\n'.join(current_text)})
-                            current_text = []
-                        segments.append({"type": "code", "content": block_content, "id": code_id})
-                        code_id += 1
-                    in_code = False
-                    code_content = []
+            elif m_type == "diff":
+                # Ensure viewer exists
+                if dv_idx not in self.message.block_states:
+                     self.message.block_states[dv_idx] = {"collapsed": True, "reverted": set()}
+                
+                # Extract details
+                filename = match.group(1) 
+                if filename: filename = filename.strip()
+                
+                lang = match.group(2)
+                if lang: lang = lang.strip()
+                
+                body = match.group(3) # The content including >>>>>>> REPLACE
+                
+                if dv_idx not in self.message.diff_viewers:
+                    # Create
+                    self.message.diff_viewers[dv_idx] = DiffViewer(
+                        body, 
+                        self.message.block_states[dv_idx], 
+                        dv_idx, 
+                        filename_hint=filename, 
+                        language_hint=lang
+                    )
                 else:
-                    # Start code block
-                    if current_text:
-                        segments.append({"type": "text", "content": '\n'.join(current_text)})
-                        current_text = []
-                    in_code = True
-            elif in_code:
-                code_content.append(line)
-            else:
-                current_text.append(line)
+                    self.message.diff_viewers[dv_idx].update_content(body)
+                
+                segments.append({"type": "diff", "dv_id": dv_idx})
+                dv_idx += 1
 
-        # Flush remaining text
-        if current_text:
-            segments.append({"type": "text", "content": '\n'.join(current_text)})
+            elif m_type == "code":
+                content = match.group(3) # Inner content
+                segments.append({"type": "code", "content": content, "id": code_idx})
+                code_idx += 1
+
+            pos = end
+
+        # Rebuild anchors based on actual diff viewers found
+        self.message.anchors = []
+        for i in range(dv_idx):
+             if i in self.message.diff_viewers:
+                 dv = self.message.diff_viewers[i]
+                 self.message.anchors.append({
+                     "type": "diff",
+                     "label": f"diff: {dv.state.filename}"
+                 })
 
         return segments
 

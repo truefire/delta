@@ -3,8 +3,8 @@ import re
 
 code_block_pattern = re.compile(
     r"(?:^([^\n`]+)\n)?^\s*```([^\n]*)\n"
-    r"(.*?)"
-    r"^\s*```",
+    r"(.*?^\s*>>>>>>> REPLACE)"      # This lets us support internal triple-backticks
+    r"\s*\n^\s*```",
     re.MULTILINE | re.DOTALL
 )
 

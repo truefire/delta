@@ -1421,6 +1421,7 @@ def _find_best_fuzzy_match(content: str, search_block: str, line_threshold: floa
             if s_line == c_line:
                 score = 1.0
             else:
+                #We could use something faster but the cost of this is marginal
                 score = difflib.SequenceMatcher(None, c_line, s_line).ratio()
             
             current_total_score += score
