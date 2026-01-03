@@ -11,7 +11,7 @@ from styles import STYLE
 from .common import (
     submit_prompt, submit_plan, submit_filedig, cancel_generation, 
     ensure_user_bubble, unqueue_session, cancel_all_tasks,
-    render_tooltip
+    render_tooltip, start_generation
 )
 
 
@@ -141,6 +141,14 @@ def render_chat_panel():
                 sessions_to_close.append(session_id)
 
         if imgui.begin_popup_context_item(f"tab_ctx_{session_id}"):
+            if session.is_queued:
+                imgui.push_style_color(imgui.Col_.text, STYLE.get_imvec4("queued"))
+                if imgui.menu_item("Start now (Beware Race Conditions)", "", False)[0]:
+                    unqueue_session(session_id)
+                    start_generation(session_id)
+                imgui.pop_style_color()
+                imgui.separator()
+
             if state.prompt_history:
                 imgui.text_disabled("Prompt History")
                 imgui.separator()

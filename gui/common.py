@@ -207,7 +207,14 @@ def handle_queue_event(event: dict):
                     yank_window()
 
         # Queue Logic
-        if state.impl_queue and state.current_impl_sid is None and not state.queue_blocked:
+        # Check if ANY implementation session is still generating
+        tasks_running = False
+        for sess in state.sessions.values():
+            if sess.is_generating and not sess.is_ask_mode:
+                tasks_running = True
+                break
+
+        if state.impl_queue and not tasks_running and not state.queue_blocked:
             next_sid = state.impl_queue.pop(0)
             start_generation(next_sid)
 
