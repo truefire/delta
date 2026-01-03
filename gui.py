@@ -1573,6 +1573,57 @@ def _perform_git_pull():
     threading.Thread(target=worker, daemon=True).start()
 
 def _perform_uv_upgrade(tool_name):
+    # Windows-specific handling: Spawn external script and exit
+    if sys.platform == "win32":
+        try:
+            # 1. Create a temporary batch script in AppData
+            ipc_dir = core.APP_DATA_DIR / "ipc"
+            ipc_dir.mkdir(parents=True, exist_ok=True)
+            updater_script = ipc_dir / "update_runner.bat"
+            log_file = ipc_dir / "update_log.txt"
+            result_file = ipc_dir / "update_result.txt"
+
+            # Cleanup old files
+            if log_file.exists(): log_file.unlink()
+            if result_file.exists(): result_file.unlink()
+            
+            # The script waits for us to die, updates, restarts, self-deletes
+            script_content = f"""@echo off
+title Delta Updater
+echo Waiting for Delta to close...
+timeout /t 3 /nobreak >nul
+echo Upgrading {tool_name}...
+echo Running update... > "{log_file}"
+uv tool upgrade {tool_name} >> "{log_file}" 2>&1
+set ERR=%errorlevel%
+echo %ERR% > "{result_file}"
+if %ERR% neq 0 (
+    echo Update failed with code %ERR%.
+) else (
+    echo Update complete.
+)
+echo Restarting Delta...
+start delta
+(goto) 2>nul & del "%~f0"
+"""
+            with open(updater_script, "w", encoding="utf-8") as f:
+                f.write(script_content)
+
+            # 2. Spawn the script detached from this process
+            # CREATE_NEW_CONSOLE (0x10) ensures it has its own window
+            subprocess.Popen(
+                [str(updater_script)],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                shell=True
+            )
+            
+            # 3. Request exit to release file lock
+            hello_imgui.get_runner_params().app_shall_exit = True
+            
+        except Exception as e:
+            state.update_status = f"Failed to launch updater: {e}"
+        return
+
     state.update_in_progress = True
     state.update_status = f"Upgrading '{tool_name}' via uv..."
     
@@ -1590,6 +1641,40 @@ def _perform_uv_upgrade(tool_name):
             state.update_status = f"uv upgrade failed:\n{out}"
             
     threading.Thread(target=worker, daemon=True).start()
+
+def check_update_result():
+    """Check for results from a previous update attempt."""
+    ipc_dir = core.APP_DATA_DIR / "ipc"
+    result_file = ipc_dir / "update_result.txt"
+    log_file = ipc_dir / "update_log.txt"
+    
+    if result_file.exists():
+        try:
+            content = result_file.read_text().strip()
+            if not content: return
+            
+            exit_code = int(content)
+            log_content = log_file.read_text("utf-8", errors="replace").strip() if log_file.exists() else ""
+            
+            # Clean up
+            try: result_file.unlink() 
+            except: pass
+            try: log_file.unlink() 
+            except: pass
+            
+            if exit_code == 0:
+                state.update_status = "Update successful!\nDelta has been updated to the latest version."
+            else:
+                if len(log_content) > 1000:
+                    log_content = log_content[:1000] + "\n...(truncated)"
+                state.update_status = f"Update failed (Exit code {exit_code}).\n\nLog:\n{log_content}"
+            
+            state.show_update_popup = True
+            state.update_in_progress = False
+            state.can_update = False
+            
+        except Exception as e:
+            log_message(f"Error checking update result: {e}")
 
 def _check_updates_worker():
     tool_dir = core._TOOL_DIR
@@ -1630,7 +1715,11 @@ def _check_updates_worker():
                     break
             
             if found_name:
-                state.update_status = f"Detected 'uv' installation ('{found_name}')."
+                warn = ""
+                if sys.platform == "win32":
+                    warn = "\n\nNOTE: The program must close to apply updates.\nA separate console will open, and Delta will restart automatically."
+
+                state.update_status = f"Detected 'uv' installation ('{found_name}').{warn}"
                 # uv upgrade handles already-updated state gracefully
                 state.can_update = True
                 state.update_func = lambda: _perform_uv_upgrade(found_name)
@@ -3499,6 +3588,8 @@ def run_gui():
 
     if config.persist_session and (SESSIONS_DIR / "autosave.json").exists():
         load_state("autosave")
+
+    check_update_result()
 
     if not state.sessions:
         initial_session = create_session()
