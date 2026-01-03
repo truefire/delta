@@ -165,6 +165,7 @@ def handle_queue_event(event: dict):
     elif event_type == "done":
         state.stats_dirty = True
         if session:
+            session.request_end_time = time.time()
             session.is_generating = False
             session.is_queued = False
 
@@ -254,6 +255,8 @@ def start_generation(session_id: int):
     session = state.sessions.get(session_id)
     if not session:
         return
+    
+    session.execution_start_time = time.time()
 
     if not session.is_ask_mode:
         state.current_impl_sid = session_id
@@ -403,6 +406,9 @@ def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bo
 
     session.last_prompt = prompt
     session.input_text = ""
+    session.request_start_time = time.time()
+    session.execution_start_time = None
+    session.request_end_time = 0.0
     session.is_ask_mode = ask_mode
     session.is_planning = is_planning
     state.prompt_history_idx = -1
@@ -2372,6 +2378,31 @@ def render_chat_panel():
     if cancel_w > 0:
         total_w += cancel_w + style.item_spacing.x
 
+    # Queue Timer calculation
+    q_timer_text = ""
+    q_sess = state.sessions.get(state.active_session_id)
+    
+    # If active session isn't busy, look for background activity
+    if not (q_sess and (q_sess.is_generating or q_sess.is_queued)):
+        if state.current_impl_sid:
+            q_sess = state.sessions.get(state.current_impl_sid)
+        
+        if not (q_sess and (q_sess.is_generating or q_sess.is_queued)):
+            q_sess = None
+            for s in state.sessions.values():
+                if s.is_generating or s.is_queued:
+                    q_sess = s
+                    break
+
+    if q_sess and q_sess.request_start_time > 0 and (q_sess.is_generating or q_sess.is_queued):
+        dur = time.time() - q_sess.request_start_time
+        if dur > 0:
+            q_timer_text = f"{dur:.1f}s"
+
+    if q_timer_text:
+        tw = imgui.calc_text_size(q_timer_text).x + style.frame_padding.x * 2
+        total_w += tw + style.item_spacing.x
+
     cursor_x = imgui.get_cursor_pos_x()
     target_x = window_width - total_w - window_padding
 
@@ -2391,6 +2422,13 @@ def render_chat_panel():
         state.show_system_prompt = not state.show_system_prompt
     if imgui.is_item_hovered():
         imgui.set_tooltip("Toggle visibility of the System Prompt at the top of the chat.")
+
+    if q_timer_text:
+        imgui.same_line()
+        imgui.align_text_to_frame_padding()
+        imgui.text_colored(STYLE.get_imvec4("fg_dim"), q_timer_text)
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Total elapsed time since request submission")
 
     if cancel_w > 0:
         imgui.same_line()
@@ -2414,7 +2452,7 @@ def render_chat_session(session):
     avail = imgui.get_content_region_avail()
     
     # Fixed height overhead for Prompt label (25), Buttons (35), Context Text (35) plus Spacing
-    bottom_overhead = 100
+    bottom_overhead = 125
     if session.waiting_for_approval:
         bottom_overhead += 45
 
@@ -2670,6 +2708,25 @@ def render_chat_session(session):
                 log_message(f"Review failed: {e}")
         if imgui.is_item_hovered():
             imgui.set_tooltip("View changes made in this session.")
+
+    # Task Timer
+    if session.execution_start_time is not None:
+        t_now = time.time()
+        t_end = t_now
+        if session.request_end_time > 0:
+            t_end = session.request_end_time
+        
+        t_dur = max(0.0, t_end - session.execution_start_time)
+        
+        if t_dur > 0 or session.is_generating:
+            imgui.dummy(imgui.ImVec2(0, 2))
+            run_str = f"Task: {t_dur:.1f}s"
+            window_w = imgui.get_window_width()
+            t_w = imgui.calc_text_size(run_str).x
+            style = imgui.get_style()
+            target_x = window_w - t_w - style.window_padding.x - 5
+            imgui.set_cursor_pos_x(target_x)
+            imgui.text_colored(STYLE.get_imvec4("fg_dim"), run_str)
 
     imgui.separator()
 

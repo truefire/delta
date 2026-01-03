@@ -45,6 +45,7 @@ class ChatSession:
     current_response_chars: int = 0
     request_start_time: float = 0.0
     execution_start_time: float = None
+    request_end_time: float = 0.0
 
     is_generating: bool = False
     is_queued: bool = False
@@ -85,6 +86,9 @@ class ChatSession:
             "completed": self.completed,
             "backup_id": self.backup_id,
             "group_id": self.group_id,
+            "request_start_time": self.request_start_time,
+            "execution_start_time": self.execution_start_time,
+            "request_end_time": self.request_end_time,
         }
 
     def from_dict(self, data: dict) -> None:
@@ -99,6 +103,9 @@ class ChatSession:
         self.completed = data.get("completed", False)
         self.backup_id = data.get("backup_id")
         self.group_id = data.get("group_id")
+        self.request_start_time = data.get("request_start_time", 0.0)
+        self.execution_start_time = data.get("execution_start_time")
+        self.request_end_time = data.get("request_end_time", 0.0)
 
     def recover_lost_prompt(self) -> None:
         """Recover last_prompt into input_text if it wasn't saved content history."""
