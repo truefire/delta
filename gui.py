@@ -313,7 +313,7 @@ def handle_queue_event(event: dict):
         new_sess.input_text = ""
         new_sess.last_prompt = full_prompt
         
-        _submit_common(new_sess, full_prompt, is_planning=target_planning, ask_mode=target_ask, save_to_history=False)
+        _submit_common(new_sess, full_prompt, is_planning=target_planning, ask_mode=target_ask, save_to_history=False, high_priority=True)
 
 def ensure_user_bubble(session, text: str):
     """Ensure the latest message is a user bubble with the given text."""
@@ -502,7 +502,7 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
         state.gui_queue.put({"type": "end_response", "session_id": session_id})
         state.gui_queue.put({"type": "done", "session_id": session_id})
 
-def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bool = False, is_filedig: bool = False, save_to_history: bool = True):
+def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bool = False, is_filedig: bool = False, save_to_history: bool = True, high_priority: bool = False):
     """Common submission logic for prompt and plan."""
     if save_to_history and prompt and (not state.prompt_history or state.prompt_history[-1] != prompt):
         state.prompt_history.append(prompt)
@@ -525,11 +525,16 @@ def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bo
 
     ensure_user_bubble(session, session.last_prompt)
 
-    if session.is_ask_mode or session.is_filedig:
+    if session.is_ask_mode:
         start_generation(session.id)
     elif state.current_impl_sid is not None or state.queue_blocked or state.impl_queue:
         session.is_queued = True
-        state.impl_queue.append(session.id)
+        
+        if high_priority:
+            state.impl_queue.insert(0, session.id)
+        else:
+            state.impl_queue.append(session.id)
+            
         if state.current_impl_sid is None and not state.queue_blocked:
             next_sid = state.impl_queue.pop(0)
             start_generation(next_sid)
