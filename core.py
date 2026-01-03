@@ -2778,6 +2778,7 @@ def run_filedig_agent(
     prompt: str,
     output_func: OutputFunc,
     cancel_event: threading.Event | None = None,
+    history: list[dict] | None = None,
 ) -> dict:
     """Run the Filedig agent loop to discover files."""
     
@@ -2886,10 +2887,16 @@ Guidelines:
 - If you can't find anything, try looking in 'src', 'lib', or typical folders.
 """
     
-    messages = [
-        {"role": "system", "content": system_msg},
-        {"role": "user", "content": f"Find files relevant to this request: {prompt}"}
-    ]
+    if history is not None:
+        messages = history
+        if not messages:
+            messages.append({"role": "system", "content": system_msg})
+            messages.append({"role": "user", "content": f"Find files relevant to this request: {prompt}"})
+    else:
+        messages = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": f"Find files relevant to this request: {prompt}"}
+        ]
 
     client = _create_openai_client()
     max_turns = config.filedig_max_turns
@@ -2911,7 +2918,14 @@ Guidelines:
             )
             
             msg = response.choices[0].message
-            messages.append(msg)
+            
+            # Store as dict for serialization compatibility
+            try:
+                msg_dict = msg.model_dump(exclude_none=True)
+            except AttributeError:
+                msg_dict = msg.dict(exclude_none=True)
+
+            messages.append(msg_dict)
 
             # Check for tool calls
             if msg.tool_calls:

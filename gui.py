@@ -375,7 +375,7 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
 
         if session.is_filedig:
             from core import run_filedig_agent
-            result = run_filedig_agent(prompt, output_func, cancel_event)
+            result = run_filedig_agent(prompt, output_func, cancel_event, history=session.history)
             if result.get("success"):
                 state.gui_queue.put({
                     "type": "filedig_success",
@@ -2814,7 +2814,7 @@ def render_chat_session(session):
             submit_filedig()
         imgui.pop_style_color()
         if imgui.is_item_hovered():
-            imgui.set_tooltip("Agentic search: Finds relevant files and then starts a Run")
+            imgui.set_tooltip("Agentic search: Finds relevant files and then starts a Run.\nWorks best if your prompt includes specific terms to search for.")
 
 
     if session.is_generating and not is_cancelling:
@@ -2843,7 +2843,39 @@ def render_chat_session(session):
         if imgui.is_item_hovered():
             imgui.set_tooltip("View changes made in this session.")
 
-    # Task Timer
+    imgui.separator()
+
+    # Context calculations
+    context_tokens = 0
+    if not session.is_filedig:
+        checked_files = [f for f in state.selected_files if state.file_checked.get(f, True) and state.file_exists_cache.get(f, True)]
+        context_tokens = sum(get_file_stats(f)[1] for f in checked_files)
+
+    prompt_tokens = estimate_tokens(session.input_text)
+    
+    output_tokens = 0
+    if session.bubbles:
+        last_b = session.bubbles[-1]
+        if last_b.role == "assistant":
+            output_tokens = estimate_tokens(last_b.content)
+
+    total_tokens = context_tokens + prompt_tokens + output_tokens
+
+    model_list = list(AVAILABLE_MODELS.keys())
+    model_name = model_list[state.model_idx] if state.model_idx < len(model_list) else ""
+    _, price_str = calculate_input_cost(total_tokens, model_name)
+
+    status_parts = []
+    status_parts.append(f"Context: ~{context_tokens}")
+    status_parts.append(f"Prompt: ~{prompt_tokens}")
+    if output_tokens > 0:
+        status_parts.append(f"Output: ~{output_tokens}")
+    status_parts.append(f"Total: ~{total_tokens}")
+    status_parts.append(f"Est: {price_str}")
+
+    imgui.text_colored(STYLE.get_imvec4("fg_dim"), " | ".join(status_parts))
+
+    # Task Timer (same line)
     if session.execution_start_time is not None:
         t_now = time.time()
         t_end = t_now
@@ -2853,29 +2885,16 @@ def render_chat_session(session):
         t_dur = max(0.0, t_end - session.execution_start_time)
         
         if t_dur > 0 or session.is_generating:
-            imgui.dummy(imgui.ImVec2(0, 2))
             run_str = f"Task: {t_dur:.1f}s"
             window_w = imgui.get_window_width()
             t_w = imgui.calc_text_size(run_str).x
             style = imgui.get_style()
+            
             target_x = window_w - t_w - style.window_padding.x - 5
-            imgui.set_cursor_pos_x(target_x)
-            imgui.text_colored(STYLE.get_imvec4("fg_dim"), run_str)
-
-    imgui.separator()
-
-    checked_files = [f for f in state.selected_files if state.file_checked.get(f, True) and state.file_exists_cache.get(f, True)]
-    context_tokens = sum(get_file_stats(f)[1] for f in checked_files)
-
-    prompt_tokens = estimate_tokens(session.input_text)
-    total_tokens = context_tokens + prompt_tokens
-
-    model_list = list(AVAILABLE_MODELS.keys())
-    model_name = model_list[state.model_idx] if state.model_idx < len(model_list) else ""
-    _, price_str = calculate_input_cost(total_tokens, model_name)
-
-    imgui.text_colored(STYLE.get_imvec4("fg_dim"),
-        f"Context: ~{context_tokens} | Prompt: ~{prompt_tokens} | Total: ~{total_tokens} tokens | Est: {price_str}")
+            # Ensure we don't draw over the status text
+            if target_x > imgui.get_cursor_pos_x() + 10:
+                imgui.same_line(target_x)
+                imgui.text_colored(STYLE.get_imvec4("fg_dim"), run_str)
 
 def render_logs_panel():
     if imgui.button("Clear"):

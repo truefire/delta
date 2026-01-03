@@ -410,6 +410,10 @@ def rebuild_session_bubbles(session: ChatSession):
         
         bubble = ChatBubble(role, i)
         content = msg.get("content", "")
+        if content is None: content = ""
+
+        if role == "assistant" and not content and msg.get("tool_calls"):
+            content = "*Using tools...*"
         
         if isinstance(content, list):
             text_parts = [p["text"] for p in content if p.get("type") == "text"]
@@ -430,8 +434,6 @@ def save_state(name: str):
     
     sessions_data = []
     for sid, sess in state.sessions.items():
-        if sess.is_filedig:
-            continue
         sess_data = sess.to_dict()
         sess_data["__id__"] = sid 
         sess_data["__input_text__"] = sess.input_text
