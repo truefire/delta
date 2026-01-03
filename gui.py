@@ -2601,9 +2601,14 @@ def render_chat_session(session):
 
     imgui.text("Prompt:")
 
+    if session.should_focus_input:
+        if state.frame_count > 1:
+            imgui.set_keyboard_focus_here()
+            session.should_focus_input = False
+
     flags = imgui.InputTextFlags_.allow_tab_input | imgui.InputTextFlags_.word_wrap
     changed, session.input_text = imgui.input_text_multiline(
-        "##prompt_input",
+        f"##prompt_input_{session.id}",
         session.input_text,
         imgui.ImVec2(-1, state.chat_input_height),
         flags

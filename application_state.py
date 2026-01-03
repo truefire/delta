@@ -73,6 +73,8 @@ class ChatSession:
     approval_event: threading.Event = field(default_factory=threading.Event)
     approval_result: bool = False
 
+    should_focus_input: bool = True
+
     def to_dict(self) -> dict:
         """Serialize session state to a dictionary."""
         return {
