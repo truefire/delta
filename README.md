@@ -151,6 +151,12 @@ To configure the `api_base_url`, `api_key`, and custom model definitions:
 - **GUI**: Tools -> API Settings
 - **CLI**: `delta config --settings`
 
+## Model Selection
+
+- Empirically, Delta seems to work best with `gemini-3-pro-preview`. 
+- `claude-4.5-opus` is also pretty strong.
+- `gemini-3-flash-preview` is a strong cheap/fast model for simpler tasks.
+
 ## Why not use <other tool> instead?
 
 Other tools such as Claude Code work pretty good these days, especially for "unsupervised" work -- use them if they fit your use case better.
