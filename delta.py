@@ -3,6 +3,7 @@
 import os
 import sys
 import subprocess
+import logging
 
 from gui import run_gui
 from cli import run_cli
@@ -43,13 +44,13 @@ def main():
                 sys.exit(exit_code)
 
             # If we are here, restart was requested. Loop continues.
-            print("[Delta] Restarting...")
+            logging.log(logging.INFO, "[Delta] Restarting...")
 
         except KeyboardInterrupt:
             # Handle Ctrl+C gracefully
             sys.exit(130)
         except Exception as e:
-            print(f"Error in Delta supervisor: {e}", file=sys.stderr)
+            logging.exception(f"Error in Delta supervisor")
             sys.exit(1)
 
 if __name__ == "__main__":
