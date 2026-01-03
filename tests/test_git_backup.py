@@ -125,3 +125,71 @@ def test_restore_git_backup_wrapper(git_repo):
     res = restore_git_backup(sid)
     assert "git" in res
     assert "Restored snapshot" in res["git"]
+
+def test_shadow_with_staged_and_unstaged_changes(git_repo):
+    handler = GitShadowHandler(branch_name="delta-shadow-complex")
+    
+    # 1. Create file A, commit it.
+    f_a = git_repo / "a.txt"
+    f_a.write_text("A_v1")
+    subprocess.run(["git", "add", "a.txt"], cwd=git_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "Add A"], cwd=git_repo, check=True)
+
+    # 2. Create file B, commit it.
+    f_b = git_repo / "b.txt"
+    f_b.write_text("B_v1")
+    subprocess.run(["git", "add", "b.txt"], cwd=git_repo, check=True)
+    subprocess.run(["git", "commit", "-m", "Add B"], cwd=git_repo, check=True)
+
+    # 3. Modify A (staged).
+    f_a.write_text("A_staged")
+    subprocess.run(["git", "add", "a.txt"], cwd=git_repo, check=True)
+
+    # 4. Modify B (unstaged).
+    f_b.write_text("B_unstaged")
+
+    # 5. Create untracked file C.
+    f_c = git_repo / "c.txt"
+    f_c.write_text("C_untracked")
+
+    # 6. Run GitShadowHandler.commit_files on just B (simulating modification scope)
+    # Note: verify that this doesn't accidentally commit A to the user's repo or clear staging
+    commit_hash = handler.commit_files(["b.txt"], "Delta modification")
+    assert commit_hash
+
+    # Assert WD state remains correct
+    
+    # A should still be staged with "A_staged"
+    status_a = subprocess.check_output(["git", "diff", "--cached", "a.txt"], cwd=git_repo, text=True)
+    assert "A_staged" in status_a
+    # A should NOT be modified relative to index (unstaged changes empty)
+    diff_a = subprocess.check_output(["git", "diff", "a.txt"], cwd=git_repo, text=True)
+    assert diff_a.strip() == ""
+
+    # B should still be modified in WD (unstaged) relative to HEAD/Index
+    # Since B_v1 is in HEAD, and B_unstaged is on disk.
+    diff_b = subprocess.check_output(["git", "diff", "b.txt"], cwd=git_repo, text=True)
+    assert "B_unstaged" in diff_b
+
+    # C should exist and be untracked
+    assert f_c.exists()
+    status_c = subprocess.check_output(["git", "status", "--porcelain", "c.txt"], cwd=git_repo, text=True)
+    assert "??" in status_c
+
+    # Assert shadow commit exists and contains snapshot of B
+    # The shadow commit should reflect the WD state (A_staged, B_unstaged, C_untracked)
+    
+    # Check content of B in shadow commit
+    ok, content_b = handler._run(["show", f"{commit_hash}:b.txt"])
+    assert ok
+    assert content_b == "B_unstaged"
+
+    # Check content of A in shadow commit
+    ok, content_a = handler._run(["show", f"{commit_hash}:a.txt"])
+    assert ok
+    assert content_a == "A_staged"
+
+    # Check content of C in shadow commit (should be tracked in shadow)
+    ok, content_c = handler._run(["show", f"{commit_hash}:c.txt"])
+    assert ok
+    assert content_c == "C_untracked"

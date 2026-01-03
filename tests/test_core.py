@@ -150,6 +150,21 @@ class TestFuzzyMatching:
         start, end = match
         assert content[start:end] == "The quick brown fox jumps over the lazy dog"
 
+    def test_fuzzy_match_indentation_mismatch(self):
+        content = "    def my_func():\n        return True"
+        search = "  def my_func():\n    return True" # 2 spaces
+        
+        match = _find_best_fuzzy_match(content, search, 0.8, 1)
+        assert match is not None
+
+    def test_fuzzy_match_variable_rename(self):
+        content = "def process(data):\n    return data + 1"
+        search = "def process(items):\n    return items + 1"
+        
+        # This checks tolerance for small content changes within structure
+        match = _find_best_fuzzy_match(content, search, 0.7, 2)
+        assert match is not None
+
 from core import reconcile_path
 
 class TestPathReconciliation:
@@ -297,6 +312,49 @@ v=2
         
         applied, _ = apply_diffs(text, ambiguous_mode="ignore", create_backup=False)
         assert f.read_text() == content
+
+    def test_ambiguous_application_context(self, temp_cwd):
+        f = temp_cwd / "repeats.py"
+        content = """def func():
+    return 1
+
+def func():
+    return 1
+
+def func():
+    return 1
+"""
+        f.write_text(content)
+        
+        diff = stub_to_diff("""
+repeats.py
+[SEARCH]
+def func():
+    return 1
+[REPLACE]
+def func():
+    return 2
+[END]
+""")
+        text = wrap_in_code_block(diff)
+        
+        # Test Fail
+        with pytest.raises(ValueError) as exc:
+            apply_diffs(text, ambiguous_mode="fail", create_backup=False)
+        assert "ambiguous" in str(exc.value)
+
+        # Test Replace All
+        apply_diffs(text, ambiguous_mode="replace_all", create_backup=False)
+        expected = """def func():
+    return 2
+
+def func():
+    return 2
+
+def func():
+    return 2
+"""
+        assert f.read_text() == expected
 
 from unittest.mock import MagicMock, patch
 from core import is_image_file, validate_files, _calculate_cost, generate, process_request, AVAILABLE_MODELS
@@ -735,3 +793,27 @@ class TestProcessRequestModes:
             assert API_BASE_URL == "http://new.url"
             assert "new-model" in AVAILABLE_MODELS
             assert config.git_backup_branch == "new-branch"
+
+    def test_validation_infinite_loop_prevention(self, temp_cwd, mock_gen_apply):
+        mk_gen, mk_apply, mk_val = mock_gen_apply
+        (temp_cwd / "f.txt").touch()
+
+        # Mock generate to always return valid diff
+        mk_gen.return_value = "diff"
+        # Mock apply to succeed
+        mk_apply.return_value = ({"f.txt": 1}, "bak")
+        # Mock validation to always fail
+        mk_val.return_value = (False, "Error")
+
+        res = process_request(
+            files=["f.txt"], 
+            prompt="Fix", 
+            history=[], 
+            output_func=MagicMock(),
+            validation_cmd="pytest",
+            recursion_limit=0,
+            max_retries=4
+        )
+
+        assert mk_gen.call_count == 4
+        assert res["success"] is False
