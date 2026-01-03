@@ -290,6 +290,8 @@ class AppState:
     show_auth_popup: bool = False
     auth_request_data: dict | None = None
     auth_input_text: str = ""
+
+    queue_start_time: float = 0.0
     
     # System Prompt Cache
     cached_sys_bubble: Any = None

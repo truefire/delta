@@ -184,3 +184,9 @@ def flash_screens() -> None:
                 user32.FlashWindowEx(ctypes.byref(info))
         except Exception:
             pass
+    elif sys.platform == "linux":
+        try:
+            # Requires wmctrl installed
+            subprocess.run(['wmctrl', '-r', 'Delta Tool', '-b', 'add,demands_attention'], check=False)
+        except Exception:
+            pass

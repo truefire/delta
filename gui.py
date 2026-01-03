@@ -404,6 +404,9 @@ def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bo
             state.prompt_history.pop(0)
         save_prompt_history()
 
+    if state.queue_start_time == 0.0:
+        state.queue_start_time = time.time()
+
     session.last_prompt = prompt
     session.input_text = ""
     session.request_start_time = time.time()
@@ -2380,22 +2383,9 @@ def render_chat_panel():
 
     # Queue Timer calculation
     q_timer_text = ""
-    q_sess = state.sessions.get(state.active_session_id)
     
-    # If active session isn't busy, look for background activity
-    if not (q_sess and (q_sess.is_generating or q_sess.is_queued)):
-        if state.current_impl_sid:
-            q_sess = state.sessions.get(state.current_impl_sid)
-        
-        if not (q_sess and (q_sess.is_generating or q_sess.is_queued)):
-            q_sess = None
-            for s in state.sessions.values():
-                if s.is_generating or s.is_queued:
-                    q_sess = s
-                    break
-
-    if q_sess and q_sess.request_start_time > 0 and (q_sess.is_generating or q_sess.is_queued):
-        dur = time.time() - q_sess.request_start_time
+    if state.queue_start_time > 0.0:
+        dur = time.time() - state.queue_start_time
         if dur > 0:
             q_timer_text = f"{dur:.1f}s"
 
@@ -3309,7 +3299,7 @@ def render_context_manager():
     imgui.end()
 
 def toggle_maximize_window():
-    """Toggle window maximization state (Windows only)."""
+    """Toggle window maximization state."""
     if sys.platform == "win32":
         try:
             import ctypes
@@ -3320,6 +3310,11 @@ def toggle_maximize_window():
             else:
                 ctypes.windll.user32.ShowWindow(hwnd, 3)  # SW_MAXIMIZE
         except:
+            pass
+    elif sys.platform == "linux":
+        try:
+            subprocess.run(['wmctrl', '-r', ':ACTIVE:', '-b', 'toggle,maximized_vert,maximized_horz'], check=False)
+        except Exception:
             pass
 
 def render_menu_bar():
@@ -3388,6 +3383,11 @@ def render_menu_bar():
                 ctypes.windll.user32.ShowWindow(hwnd, 6)
             except:
                 pass
+        elif sys.platform == "linux":
+            try:
+                subprocess.run(['wmctrl', '-r', ':ACTIVE:', '-b', 'add,hidden'], check=False)
+            except:
+                pass
 
     # --- Button 2: Maximize ---
     imgui.same_line(start_x + button_width, spacing)
@@ -3444,6 +3444,13 @@ def main_gui():
     process_queue()
 
     is_generating = any(s.is_generating for s in state.sessions.values())
+    is_busy = is_generating or bool(state.impl_queue)
+
+    if not is_busy:
+        state.queue_start_time = 0.0
+    elif state.queue_start_time == 0.0:
+        state.queue_start_time = time.time()
+
     hello_imgui.get_runner_params().fps_idling.enable_idling = not is_generating
 
     if state.input_dirty and time.time() - state.last_input_time > 2.0:
