@@ -27,6 +27,81 @@ logger = logging.getLogger(__name__)
 
 _TOOL_DIR = Path(__file__).parent.resolve()
 
+# --- FILEDIG TOOL DEFINITIONS ---
+
+FILEDIG_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_directory",
+            "description": "List files and subdirectories in a specific directory (non-recursive). Use this to explore the project structure.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Relative path to listing (e.g. '.' for root, 'src/')"
+                    }
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_file_snippet",
+            "description": "Read a snippet of a file to understand its contents. Useful for checking imports or class definitions without reading the whole file.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Path to the file"},
+                    "start_line": {"type": "integer", "description": "Start line number (1-based)", "default": 1},
+                    "end_line": {"type": "integer", "description": "End line number (1-based), max 100 lines at a time", "default": 50}
+                },
+                "required": ["path"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_codebase",
+            "description": "Search for a text string or regex pattern in the codebase (recursive text search).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Check for this string/pattern"},
+                    "path": {"type": "string", "description": "Root path to start search (default '.')"}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "submit_findings",
+            "description": "Call this when you have found the files necessary to complete the user's request.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "files": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of relevant file paths found"
+                    },
+                    "explanation": {
+                        "type": "string",
+                        "description": "Brief explanation of why these files were selected"
+                    }
+                },
+                "required": ["files"]
+            }
+        }
+    }
+]
+
 DEFAULT_HIDDEN = {
     ".git", ".svn", ".hg", ".DS_Store", "Thumbs.db",
     "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
@@ -383,6 +458,7 @@ class DeltaToolConfig:
         self.default_tries = _settings.get("default_tries", 2)
         self.default_recurse = _settings.get("default_recurse", 0)
         self.default_timeout = _settings.get("default_timeout", 10)
+        self.filedig_max_turns = _settings.get("filedig_max_turns", 200)
         self.default_ambiguous_mode = _settings.get("default_ambiguous_mode", "replace_all")
 
         self.diff_fuzzy_lines_threshold = _settings.get("diff_fuzzy_lines_threshold", 0.95)
@@ -490,6 +566,11 @@ class DeltaToolConfig:
     def set_default_timeout(self, timeout: float) -> None:
         self.default_timeout = timeout
         _settings["default_timeout"] = timeout
+        _save_settings(_settings)
+
+    def set_filedig_max_turns(self, turns: int) -> None:
+        self.filedig_max_turns = turns
+        _settings["filedig_max_turns"] = turns
         _save_settings(_settings)
 
     def set_default_ambiguous_mode(self, mode: str) -> None:
@@ -2691,6 +2772,212 @@ def _execute_attempt(
             return False, backup_id, f"Verification process error: {e}", f"Verification process error: {e}"
 
     return True, backup_id, None, None
+
+
+def run_filedig_agent(
+    prompt: str,
+    output_func: OutputFunc,
+    cancel_event: threading.Event | None = None,
+) -> dict:
+    """Run the Filedig agent loop to discover files."""
+    
+    # 1. Setup Tools Implementation
+    def _tool_ls(args):
+        p = Path(args.get("path", ".")).resolve()
+        try:
+            cwd = Path.cwd()
+            if not is_path_within_cwd(p, cwd):
+                return "Error: Path outside current working directory."
+            
+            if not p.exists(): return "Error: Path does not exist."
+            if not p.is_dir(): return "Error: Path is not a directory."
+            
+            items = []
+            with os.scandir(str(p)) as it:
+                for entry in it:
+                    if entry.name.startswith(".") or entry.name in DEFAULT_HIDDEN: continue
+                    kind = "DIR" if entry.is_dir() else "FILE"
+                    items.append(f"{kind}: {entry.name}")
+            return "\n".join(sorted(items))
+        except Exception as e:
+            return f"Error listing directory: {e}"
+
+    def _tool_read(args):
+        p = Path(args.get("path", "")).resolve()
+        start = max(1, args.get("start_line", 1))
+        end = args.get("end_line", start + 50)
+        if end - start > 200: end = start + 200 # Hard limit
+        
+        try:
+            cwd = Path.cwd()
+            if not is_path_within_cwd(p, cwd): return "Error: Path outside CWD."
+            if not p.exists(): return "Error: File not found."
+            if not p.is_file(): return "Error: Not a file."
+            if is_image_file(p) or is_binary_file(p): return "Error: Cannot read binary/image files."
+            
+            lines = p.read_text("utf-8", errors="replace").splitlines()
+            total_lines = len(lines)
+            if start > total_lines: return f"Error: File only has {total_lines} lines."
+            
+            snippet = "\n".join(lines[start-1:end])
+            return f"--- {p.name} ({start}-{min(end, total_lines)} of {total_lines}) ---\n{snippet}"
+        except Exception as e:
+            return f"Error reading file: {e}"
+
+    def _tool_search(args):
+        query = args.get("query", "")
+        root = Path(args.get("path", ".")).resolve()
+        if not query: return "Error: Empty query."
+        
+        results = []
+        limit = 20
+        count = 0
+        
+        try:
+            # Simple recursive python walk + string check
+            # This is slower than rg but portable
+            for r, d, f in os.walk(str(root)):
+                # Skip hidden
+                d[:] = [dn for dn in d if dn not in DEFAULT_HIDDEN and not dn.startswith(".")]
+                
+                for file in f:
+                    if file in DEFAULT_HIDDEN or file.startswith("."): continue
+                    
+                    fpath = Path(r) / file
+                    if is_binary_file(fpath) or is_image_file(fpath): continue
+
+                    try:
+                        content = fpath.read_text("utf-8", errors="replace")
+                        if query in content:
+                            # Find line number (naive)
+                            lines = content.splitlines()
+                            for i, line in enumerate(lines):
+                                if query in line:
+                                    rel_path = get_display_path(fpath)
+                                    results.append(f"{rel_path}:{i+1}: {line.strip()[:60]}")
+                                    count += 1
+                                    if count >= limit: break
+                    except Exception: pass
+                    if count >= limit: break
+                if count >= limit: break
+            
+            if not results: return "No matches found."
+            return "\n".join(results)
+        except Exception as e:
+            return f"Error searching: {e}"
+
+    # 2. System Init
+    root_listing = _tool_ls({"path": "."})
+    system_msg = f"""You are 'Filedig', an autonomous file exploration agent.
+Your goal is to find the relevant files to address the user's request.
+You do NOT edit code. You only find files.
+
+Current Root Directory Listing:
+{root_listing}
+
+Process:
+1. Analyze the request.
+2. Use tools to explore the file structure (ls), search for keywords (search), or peek at file contents (read).
+3. Once you have identified the files that need modification, call 'submit_findings'.
+
+Guidelines:
+- Be efficient. Don't read whole files if a snippet suffices.
+- Use 'search_codebase' if you are looking for specific function names or strings.
+- If you can't find anything, try looking in 'src', 'lib', or typical folders.
+"""
+    
+    messages = [
+        {"role": "system", "content": system_msg},
+        {"role": "user", "content": f"Find files relevant to this request: {prompt}"}
+    ]
+
+    client = _create_openai_client()
+    max_turns = config.filedig_max_turns
+    total_tool_calls = 0
+
+    logger.info("Starting Filedig Loop")
+
+    for turn in range(max_turns):
+        if cancel_event and cancel_event.is_set():
+            raise CancelledError("Cancelled by user")
+
+        try:
+            # Main generation
+            response = client.chat.completions.create(
+                model=config.model,
+                messages=messages,
+                tools=FILEDIG_TOOLS,
+                tool_choice="auto"
+            )
+            
+            msg = response.choices[0].message
+            messages.append(msg)
+
+            # Check for tool calls
+            if msg.tool_calls:
+                total_tool_calls += len(msg.tool_calls)
+                for tool_call in msg.tool_calls:
+                    fname = tool_call.function.name
+                    args_str = tool_call.function.arguments
+                    try:
+                        args = json.loads(args_str)
+                    except:
+                        args = {}
+
+                    logger.info(f"Filedig Tool: {fname} {args_str}")
+                    
+                    # Notify UI
+                    readable_args = " ".join([f"{k}='{v}'" for k,v in args.items()])
+                    output_func(f"> Running: {fname} {readable_args}")
+
+                    result_content = ""
+                    start_time = time.time()
+                    
+                    if fname == "list_directory":
+                        result_content = _tool_ls(args)
+                    elif fname == "read_file_snippet":
+                        result_content = _tool_read(args)
+                    elif fname == "search_codebase":
+                        result_content = _tool_search(args)
+                    elif fname == "submit_findings":
+                        # Victory!
+                        files = args.get("files", [])
+                        explanation = args.get("explanation", "")
+                        return {
+                            "success": True, 
+                            "files": files, 
+                            "explanation": explanation,
+                            "tool_calls": total_tool_calls
+                        }
+                    else:
+                        result_content = "Error: Unknown tool."
+
+                    runtime = time.time() - start_time
+                    output_func(f"> {fname} finished in {runtime:.2f}s.\nOutput:\n{result_content}")
+
+                    # Append tool result
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tool_call.id,
+                        "name": fname,
+                        "content": result_content
+                    })
+
+            else:
+                # No tool call? Model is probably chatting.
+                content = msg.content
+                if content:
+                    output_func(content)
+                # If it didn't call submit but stopped generating, nudge it
+                if turn == max_turns - 1:
+                     pass # End of loop
+
+        except Exception as e:
+            logger.error(f"Filedig error: {e}")
+            output_func(f"Error: {e}")
+            break
+            
+    return {"success": False, "message": "Max turns reached without submission."}
 
 
 def process_request(

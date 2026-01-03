@@ -9,10 +9,10 @@ Delta Tool is a hybrid CLI/GUI application designed to facilitate LLM-powered fi
 ### Key Capabilities
 *   **Context Management**: Provides user-facing tools to manage LLM file context.
 *   **Diff Application**: Robust parsing and application of LLM generated diff blocks.
-*   **Planning Mode**: Decomposing complex requests into sequential sub-tasks.
 *   **Session Management**: Multi-turn conversations with history preservation.
 *   **Safety**: Automatic backups (File or Git-based), undo functionality, and validation command execution.
 *   **QOL Focus**: Productivity features include focus modes for background task notifications, project navigation utilities, git integration, and visual diff functionality.
+*   **Optional Agentic Tools**: Plan mode allows you to break down complex tasks into subtasks, and Filedig allows you to discover context agentically.
 ---
 
 ## 2. Architecture
@@ -31,6 +31,7 @@ The codebase is modularized to separate core logic from the user interface.
     *   Diff parsing and application logic.
     *   Backup management (`BackupManager`, `GitShadowHandler`).
     *   Cost/Token estimation.
+    *   File discovery (`run_filedig_agent`).
 *   **`widgets.py`**: Custom ImGui widgets, including the `DiffViewer`, `PlanViewer`, and `ChatBubble` (Markdown renderer).
 *   **`styles.py`**: Centralized theming (Light/Dark mode) and color definitions.
 *   **`window_helpers.py`**: OS-specific window manipulation (flashing, yanking focus).
@@ -86,7 +87,6 @@ Delta makes backups (unless disabled) every time the LLM performs file modificat
 *   **Context Snapshots**: Before applying changes, `GitShadowHandler` snapshots the *current* working directory state (including untracked files) to this shadow branch. This provides a guaranteed restoration point even if the user's workspace is dirty.
 *   **Differential Analysis**: Since the backup history exists as standard git commits, Delta leverages `git diff-tree` to generate perfectly accurate, syntax-highlighted review reports comparing the "Before" and "After" states of the modification.
 *   **Git Tooling Support**: Because these backups are stored via git, they are compatible with any other git tooling a developer Smay wish to use.
-
 ---
 
 ## 4. UI Implementation Details
@@ -140,7 +140,25 @@ Data is stored in the OS-specific Application Data directory (`%APPDATA%/deltato
 
 ---
 
-## 6. Validation and Verification
+## 6. Agentic Capabilities
+
+Delta includes optional workflows that leverage light agentic behaviors.
+
+### 6.1 Plan Mode
+When "Plan" is selected, the System Prompt is adjusted to request a decomposition of the task rather than code edits.
+*   **Parsing**: The LLM outputs `<<<<<<< PLAN` blocks containing a `Title` and a specific technical `Prompt`.
+*   **Execution**: The GUI parses these blocks and populates the `impl_queue` in `AppState`. New chat sessions are spawned for each step, linked by a `group_id`.
+*   **Orchestration**: Sessions run sequentially. If a step fails validation (if enabled), the queue halts to allow user intervention.
+
+### 6.2 Filedig (Discovery Agent)
+Filedig is a tool-use loop designed to modify the *context* rather than the code.
+*   **Tool Loop**: Located in `core.run_filedig_agent`, it enters a loop where the LLM can call defined tools: `list_directory`, `read_file_snippet`, and `search_codebase`.
+*   **State**: The agent maintains an internal message history separate from the main chat session until it succeeds.
+*   **Handoff**: Upon calling the `submit_findings` tool, the agent terminates. The file paths discovered are passed to a new standard generation session, which then executes the original user prompt using the discovered context.
+
+---
+
+## 7. Validation and Verification
 
 Delta implements a multi-stage validation pipeline designed to catch and correct (or abort) errors.
 
@@ -158,7 +176,7 @@ Delta implements a multi-stage validation pipeline designed to catch and correct
 
 ---
 
-## 7. LLM Accomodation
+## 8. LLM Accomodation
 
 Several design decisions were made to accommodate idiosyncracies of LLM generated code.
 
@@ -168,7 +186,7 @@ Several design decisions were made to accommodate idiosyncracies of LLM generate
 
 ---
 
-## 8. Testing
+## 9. Testing
 
 The codebase uses `pytest` for unit and integration testing.
 

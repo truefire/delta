@@ -42,6 +42,7 @@
   "default_tries": 2,
   "default_recurse": 0,
   "default_timeout": 60.0,
+  "filedig_max_turns": 200,
   "diff_fuzzy_lines_threshold": 0.95,
   "diff_fuzzy_max_bad_lines": 1,
   "focus_trigger": "task",

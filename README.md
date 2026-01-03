@@ -22,6 +22,7 @@ See [this page](ARCHITECTURE.md) for details on implementation.
 - **History**: Save and resume multi-turn conversation sessions.
 - **Focus Mode**: (Optionally) flashes your screen when a task completes. No more lost time between context switching.
 - **Planning Mode**: Break down complex features into a sequence of smaller, manageable implementation steps.
+- **Smart File Discovery**: 'Filedig' can discover relevant files based on your prompt, if you really don't want to manually select them.
 
 
 # Installation

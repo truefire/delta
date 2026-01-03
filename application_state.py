@@ -52,6 +52,7 @@ class ChatSession:
     is_ask_mode: bool = False
     is_debug: bool = False
     is_planning: bool = False  # True if this is a planning generation session
+    is_filedig: bool = False  # True if this is a file discovery session
     failed: bool = False  # True if last request failed
     completed: bool = False  # True if last request completed successfully
 
@@ -68,6 +69,9 @@ class ChatSession:
     # Files added during this session
     session_added_files: set = field(default_factory=set)
 
+    # Files sent with the prompt (snapshot)
+    sent_files: list = field(default_factory=list)
+
     # Approval state
     waiting_for_approval: bool = False
     approval_event: threading.Event = field(default_factory=threading.Event)
@@ -75,15 +79,20 @@ class ChatSession:
 
     should_focus_input: bool = True
 
+    # Context Override (e.g. from Filedig)
+    forced_context_files: list | None = None
+
     def to_dict(self) -> dict:
         """Serialize session state to a dictionary."""
         return {
             "history": self.history,
             "session_added_files": [str(p) for p in self.session_added_files],
+            "sent_files": self.sent_files,
             "last_prompt": self.last_prompt,
             "is_ask_mode": self.is_ask_mode,
             "is_debug": self.is_debug,
             "is_planning": self.is_planning,
+            "is_filedig": self.is_filedig,
             "failed": self.failed,
             "completed": self.completed,
             "backup_id": self.backup_id,
@@ -97,10 +106,12 @@ class ChatSession:
         """Restore session state from a dictionary."""
         self.history = data.get("history", [])
         self.session_added_files = {Path(p) for p in data.get("session_added_files", [])}
+        self.sent_files = data.get("sent_files", [])
         self.last_prompt = data.get("last_prompt", "")
         self.is_ask_mode = data.get("is_ask_mode", False)
         self.is_debug = data.get("is_debug", False)
         self.is_planning = data.get("is_planning", False)
+        self.is_filedig = data.get("is_filedig", False)
         self.failed = data.get("failed", False)
         self.completed = data.get("completed", False)
         self.backup_id = data.get("backup_id")
@@ -181,6 +192,7 @@ class AppState:
     max_tries: str = str(config.default_tries)
     recursions: str = str(config.default_recurse)
     timeout: str = str(config.default_timeout)
+    filedig_max_turns: str = str(config.filedig_max_turns)
     output_sharding_limit: str = str(config.output_sharding_limit)
     sharding_ratio: str = str(config.sharding_ratio)
     max_shards: str = str(config.max_shards)
@@ -418,6 +430,8 @@ def save_state(name: str):
     
     sessions_data = []
     for sid, sess in state.sessions.items():
+        if sess.is_filedig:
+            continue
         sess_data = sess.to_dict()
         sess_data["__id__"] = sid 
         sess_data["__input_text__"] = sess.input_text
@@ -850,6 +864,7 @@ def sync_settings_from_config():
     state.max_tries = str(config.default_tries)
     state.recursions = str(config.default_recurse)
     state.timeout = str(config.default_timeout)
+    state.filedig_max_turns = str(config.filedig_max_turns)
     state.output_sharding_limit = str(config.output_sharding_limit)
     state.max_shards = str(config.max_shards)
     state.sharding_ratio = str(config.sharding_ratio)
@@ -894,6 +909,10 @@ def sync_config_from_settings():
     except ValueError: pass
     try:
         config.set_default_timeout(float(state.timeout))
+    except ValueError: pass
+
+    try:
+        config.set_filedig_max_turns(int(state.filedig_max_turns))
     except ValueError: pass
 
     try:

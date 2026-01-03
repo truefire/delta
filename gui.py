@@ -161,6 +161,9 @@ def handle_queue_event(event: dict):
     elif event_type == "failure":
         if session:
             session.failed = True
+            err_bubble = ChatBubble("error", len(session.bubbles))
+            err_bubble.update(event.get("message", "Task failed"))
+            session.bubbles.append(err_bubble)
 
     elif event_type == "done":
         state.stats_dirty = True
@@ -237,6 +240,74 @@ def handle_queue_event(event: dict):
             state.is_searching = False
             state.view_tree_dirty = True
 
+    elif event_type == "filedig_update" and session:
+        # Show tool activity in UI
+        msg = event.get("message", "")
+        
+        # Append to existing tool bubble if active, else create
+        last_bubble = session.bubbles[-1] if session.bubbles else None
+        
+        if last_bubble and last_bubble.role == "tool":
+            last_bubble.update(msg + "\n")
+        else:
+            if session.current_bubble and session.current_bubble.role == "assistant":
+                session.current_bubble.flush()
+                session.current_bubble = None
+            
+            tool_bubble = ChatBubble("tool", len(session.bubbles))
+            tool_bubble.update(msg + "\n")
+            session.bubbles.append(tool_bubble)
+    
+    elif event_type == "filedig_success":
+        # Handle successful dig - spawn new session
+        found_files = event.get("files", [])
+        explanation = event.get("explanation", "")
+        prompt = event.get("prompt", "")
+        tool_calls = event.get("tool_calls", 0)
+        
+        # 0. Grouping logic: Ensure filedig session has a group, and new session joins it
+        filedig_sess = state.sessions.get(session_id)
+        target_group_id = None
+        if filedig_sess:
+            filedig_sess.completed = True
+            filedig_sess.failed = False
+
+            # Add completion bubble
+            done_bubble = ChatBubble("assistant", len(filedig_sess.bubbles))
+            done_bubble.update(f"Completed in {tool_calls} toolcall(s).")
+            filedig_sess.bubbles.append(done_bubble)
+
+            if filedig_sess.group_id is None:
+                filedig_sess.group_id = state.next_group_id
+                state.next_group_id += 1
+            target_group_id = filedig_sess.group_id
+            
+        # 2. Prepare context files for Run session (do NOT add to global selection)
+        valid_files = []
+        for f in found_files:
+            p = Path(f)
+            # Try to resolve relative to CWD
+            if not p.exists():
+                p = Path.cwd() / f
+            
+            if p.exists():
+                rel = to_relative(p)
+                valid_files.append(rel)
+        
+        # 3. Create new RUN session
+        new_sess = create_session()
+        new_sess.group_id = target_group_id
+        # Pass the files specifically to this session
+        new_sess.forced_context_files = valid_files
+
+        state.active_session_id = new_sess.id
+        
+        full_prompt = f"{prompt}\n\n(Context found via Agentic search:\n{explanation})"
+        new_sess.input_text = ""
+        new_sess.last_prompt = full_prompt
+        
+        _submit_common(new_sess, full_prompt, is_planning=False, ask_mode=False, save_to_history=False)
+
 def ensure_user_bubble(session, text: str):
     """Ensure the latest message is a user bubble with the given text."""
     should_add = True
@@ -268,7 +339,14 @@ def start_generation(session_id: int):
     session.cancel_event.clear()
 
     ensure_user_bubble(session, session.last_prompt)
-    checked_files = [f for f in state.selected_files if state.file_checked.get(f, True)]
+    
+    if session.forced_context_files is not None:
+        checked_files = session.forced_context_files
+    else:
+        checked_files = [f for f in state.selected_files if state.file_checked.get(f, True)]
+    
+    # Snapshot actual files sent
+    session.sent_files = [str(f) for f in checked_files]
 
     thread = threading.Thread(
         target=_generation_worker,
@@ -286,10 +364,31 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
             return
 
         def output_func(msg: str, end: str = "\n", flush: bool = False):
-            state.gui_queue.put({"type": "status", "message": msg.rstrip()})
+            if not session.is_filedig:
+                state.gui_queue.put({"type": "status", "message": msg.rstrip()})
+            else:
+                state.gui_queue.put({"type": "filedig_update", "session_id": session_id, "message": msg.rstrip()})
 
         def stream_func(text: str, end: str = "", flush: bool = False):
             state.gui_queue.put({"type": "text", "session_id": session_id, "content": text})
+
+        if session.is_filedig:
+            from core import run_filedig_agent
+            result = run_filedig_agent(prompt, output_func, cancel_event)
+            if result.get("success"):
+                state.gui_queue.put({
+                    "type": "filedig_success",
+                    "session_id": session_id,
+                    "files": result.get("files", []),
+                    "explanation": result.get("explanation", ""),
+                    "tool_calls": result.get("tool_calls", 0),
+                    "prompt": prompt
+                })
+            else:
+                state.gui_queue.put({"type": "failure", "session_id": session_id, "message": result.get("message")})
+            
+            state.gui_queue.put({"type": "done", "session_id": session_id})
+            return
 
         modes = ["replace_all", "ignore", "fail"]
         amb_mode = modes[state.ambiguous_mode_idx] if state.ambiguous_mode_idx < len(modes) else "replace_all"
@@ -396,9 +495,9 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
         state.gui_queue.put({"type": "end_response", "session_id": session_id})
         state.gui_queue.put({"type": "done", "session_id": session_id})
 
-def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bool = False):
+def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bool = False, is_filedig: bool = False, save_to_history: bool = True):
     """Common submission logic for prompt and plan."""
-    if prompt and (not state.prompt_history or state.prompt_history[-1] != prompt):
+    if save_to_history and prompt and (not state.prompt_history or state.prompt_history[-1] != prompt):
         state.prompt_history.append(prompt)
         if MAX_PROMPT_HISTORY > 0 and len(state.prompt_history) > MAX_PROMPT_HISTORY:
             state.prompt_history.pop(0)
@@ -414,11 +513,12 @@ def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bo
     session.request_end_time = 0.0
     session.is_ask_mode = ask_mode
     session.is_planning = is_planning
+    session.is_filedig = is_filedig
     state.prompt_history_idx = -1
 
     ensure_user_bubble(session, session.last_prompt)
 
-    if session.is_ask_mode:
+    if session.is_ask_mode or session.is_filedig:
         start_generation(session.id)
     elif state.current_impl_sid is not None or state.queue_blocked or state.impl_queue:
         session.is_queued = True
@@ -515,6 +615,17 @@ def submit_plan():
             return
 
     _submit_common(session, prompt, is_planning=True, ask_mode=False)
+
+def submit_filedig():
+    """Submit a filedig request."""
+    session = get_active_session()
+    if not session: return
+    
+    prompt = session.input_text.strip()
+    if not prompt: return
+    
+    # Filedig doesn't care about current files, it finds them.
+    _submit_common(session, prompt, is_planning=False, ask_mode=False, is_filedig=True)
 
 def parse_and_distribute_plan(session):
     """Parse a completed plan and queue sub-tasks."""
@@ -1313,6 +1424,15 @@ def render_settings_panel():
     imgui.set_next_item_width(50)
     changed, state.timeout = imgui.input_text("##timeout", state.timeout)
     render_tooltip("Max seconds to wait for the validation command to complete.")
+    if changed:
+        sync_config_from_settings()
+
+    imgui.same_line()
+    imgui.text("Dig Turns:")
+    imgui.same_line()
+    imgui.set_next_item_width(50)
+    changed, state.filedig_max_turns = imgui.input_text("##fdturns", state.filedig_max_turns)
+    render_tooltip("Max turns for Filedig agent.")
     if changed:
         sync_config_from_settings()
 
@@ -2255,14 +2375,17 @@ def render_chat_panel():
         if session.is_generating:
             if session.is_planning: status = "running_plan"
             elif session.is_ask_mode: status = "running_ask"
+            elif session.is_filedig: status = "running_filedig"
             else: status = "running"
         elif session.is_queued:
             if session.is_planning: status = "queued_plan"
+            elif session.is_filedig: status = "queued_filedig"
             else: status = "queued"
         elif session.failed: status = "failed"
         elif session.completed:
             if session.is_planning: status = "done_plan"
             elif session.is_ask_mode: status = "done_ask"
+            elif session.is_filedig: status = "done_filedig"
             else: status = "done"
         elif session.is_debug: status = "debug"
         else: status = "inactive"
@@ -2458,8 +2581,13 @@ def render_chat_session(session):
 
     imgui.begin_child("chat_history", imgui.ImVec2(0, history_height), child_flags=imgui.ChildFlags_.borders)
 
-    if state.show_system_prompt:
-        checked_files = sorted([str(f) for f in state.selected_files if state.file_checked.get(f, True)])
+    if state.show_system_prompt and not session.is_filedig:
+        # If the session has run before, show what was actually sent (snapshot).
+        # Otherwise (fresh tab), show current selection (preview).
+        if session.request_start_time > 0:
+            checked_files = sorted(session.sent_files) if session.sent_files else []
+        else:
+            checked_files = sorted([str(f) for f in state.selected_files if state.file_checked.get(f, True)])
         
         # Calculate key with mtimes to ensure content freshness
         file_state_key = []
@@ -2677,6 +2805,16 @@ def render_chat_session(session):
         imgui.pop_style_color()
         if imgui.is_item_hovered():
             imgui.set_tooltip("Generate a plan and queue multiple tasks")
+            
+        imgui.same_line()
+
+        imgui.push_style_color(imgui.Col_.button, STYLE.get_imvec4("btn_dig"))
+        if imgui.button("Filedig", imgui.ImVec2(80, 0)):
+            submit_filedig()
+        imgui.pop_style_color()
+        if imgui.is_item_hovered():
+            imgui.set_tooltip("Agentic search: Finds relevant files and then starts a Run")
+
 
     if session.is_generating and not is_cancelling:
         imgui.same_line()

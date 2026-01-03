@@ -605,6 +605,34 @@ class ChatBubble:
         """Render the chat bubble. Returns action string ('debug', 'revert') or None."""
         action = None
 
+        if self.message.role == "tool":
+            # Specialized rendering for tool/agent output
+            raw_txt = self.message.content.strip()
+            summary = raw_txt.replace('\n', ' ')
+            if len(summary) > 80:
+                summary = summary[:77] + "..."
+            if not summary:
+                summary = "Agent Activity"
+
+            imgui.push_style_color(imgui.Col_.header, STYLE.get_imvec4("bg_cont"))
+            is_open = imgui.collapsing_header(f"{summary}##{self.message_id}")
+            imgui.pop_style_color()
+            
+            if is_open:
+                imgui.push_style_color(imgui.Col_.child_bg, STYLE.get_imvec4("code_bg"))
+                imgui.begin_child(f"tool_{self.message_id}", imgui.ImVec2(0, 0), child_flags=imgui.ChildFlags_.auto_resize_y | imgui.ChildFlags_.borders)
+                imgui.push_style_color(imgui.Col_.text, STYLE.get_imvec4("fg_dim"))
+                
+                if raw_txt:
+                    imgui.text_unformatted(raw_txt)
+                else:
+                    imgui.text_unformatted("(No output)")
+                    
+                imgui.pop_style_color()
+                imgui.end_child()
+                imgui.pop_style_color()
+            return None
+
         # Background color based on role
         bg_colors = {
             "user": "msg_u",
@@ -1044,6 +1072,7 @@ def draw_status_icon(draw_list, cx: float, cy: float, status: str, badge: str = 
         "running": imgui.get_color_u32(imgui.ImVec4(0.13, 0.59, 0.95, 1.0)),      
         "running_ask": imgui.get_color_u32(imgui.ImVec4(0.61, 0.15, 0.69, 1.0)),  
         "running_plan": imgui.get_color_u32(imgui.ImVec4(0.00, 0.73, 0.83, 1.0)), 
+        "running_filedig": imgui.get_color_u32(imgui.ImVec4(1.0, 0.56, 0.0, 1.0)),
         "queued": imgui.get_color_u32(imgui.ImVec4(1.0, 0.60, 0.0, 1.0)),         
         "done": imgui.get_color_u32(imgui.ImVec4(0.30, 0.69, 0.31, 1.0)),         
         "failed": imgui.get_color_u32(imgui.ImVec4(0.96, 0.26, 0.21, 1.0)),       
@@ -1051,8 +1080,10 @@ def draw_status_icon(draw_list, cx: float, cy: float, status: str, badge: str = 
         "debug": imgui.get_color_u32(imgui.ImVec4(0.96, 0.26, 0.21, 1.0)),        
     }
     colors["queued_plan"] = colors["queued"]
+    colors["queued_filedig"] = colors["queued"]
     colors["done_plan"] = colors["done"]
     colors["done_ask"] = colors["done"]
+    colors["done_filedig"] = colors["done"]
     color = colors.get(status, colors["inactive"])
 
     if status.startswith("running"):
@@ -1076,6 +1107,14 @@ def draw_status_icon(draw_list, cx: float, cy: float, status: str, badge: str = 
         draw_list.add_circle(imgui.ImVec2(cx, cy), 5, color, 12, 1.5)
         draw_list.add_line(imgui.ImVec2(cx, cy), imgui.ImVec2(cx, cy - 3), color, 1.5)
         draw_list.add_line(imgui.ImVec2(cx, cy), imgui.ImVec2(cx + 2, cy), color, 1.5)
+    elif status in ("running_filedig", "done_filedig", "queued_filedig"):
+        # Folder Icon
+        draw_list.add_line(imgui.ImVec2(cx - 5, cy - 4), imgui.ImVec2(cx - 1, cy - 4), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx - 1, cy - 4), imgui.ImVec2(cx + 1, cy - 2), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx + 1, cy - 2), imgui.ImVec2(cx + 5, cy - 2), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx - 5, cy - 4), imgui.ImVec2(cx - 5, cy + 4), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx + 5, cy - 2), imgui.ImVec2(cx + 5, cy + 4), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx - 5, cy + 4), imgui.ImVec2(cx + 5, cy + 4), color, 1.5)
     elif status == "done":
         draw_list.add_polyline(
             [imgui.ImVec2(cx - 4, cy), imgui.ImVec2(cx - 1, cy + 3), imgui.ImVec2(cx + 5, cy - 4)],

@@ -43,6 +43,7 @@ class AppStyle:
             "btn_sec": ("#e0f2f1", "#455a64"), "btn_std": ("#f0f0f0", "#424242"), "btn_fg": ("#000000", "#ffffff"),
             "btn_suc": ("#e8f5e9", "#2e7d32"), "btn_run": ("#b2dfdb", "#0277bd"),
             "btn_roll": ("#ffebee", "#c62828"), "btn_skip": ("#fffde7", "#9e8c00"), "btn_req": ("#fff3e0", "#c95800"),
+            "btn_dig": ("#fff8e1", "#ff8f00"),
             "btn_war": ("#fff9c4", "#c46200"), "btn_small": ("#f5f5f5", "#424242"),
             "queued": ("#ff9800", "#ff9800"),
             "badge_git": ("#e0f7fa", "#006064"), "badge_file": ("#e3f2fd", "#0d47a1"),
