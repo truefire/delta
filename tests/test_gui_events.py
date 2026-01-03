@@ -15,7 +15,7 @@ except Exception: pass
 import pytest
 from unittest.mock import patch
 from application_state import state, init_app_state, ChatSession
-import gui
+from gui import common as gui_common
 
 @pytest.fixture
 def mock_gui_state():
@@ -28,7 +28,7 @@ def mock_gui_state():
 def test_handle_text_event(mock_gui_state):
     # Simulate partial text stream
     event = {"type": "text", "session_id": 1, "content": "Hello"}
-    gui.handle_queue_event(event)
+    gui_common.handle_queue_event(event)
 
     sess = state.sessions[1]
     assert len(sess.bubbles) == 1
@@ -37,7 +37,7 @@ def test_handle_text_event(mock_gui_state):
 
     # Second chunk
     event2 = {"type": "text", "session_id": 1, "content": " World"}
-    gui.handle_queue_event(event2)
+    gui_common.handle_queue_event(event2)
     assert sess.bubbles[0].content == "Hello World"
 
 def test_handle_diff_failure(mock_gui_state):
@@ -51,7 +51,7 @@ def test_handle_diff_failure(mock_gui_state):
     from widgets import ChatBubble
     mock_gui_state.bubbles.append(ChatBubble("assistant"))
 
-    gui.handle_queue_event(event)
+    gui_common.handle_queue_event(event)
 
     # Should remove the assistant bubble and add error bubble
     assert len(mock_gui_state.bubbles) == 1
@@ -65,8 +65,8 @@ def test_handle_done_chaining(mock_gui_state):
     state.current_impl_sid = 1
 
     # Mock start generation to verify it picks up next
-    with patch("gui.start_generation") as mock_start:
-        gui.handle_queue_event({"type": "done", "session_id": 1})
+    with patch("gui.common.start_generation") as mock_start:
+        gui_common.handle_queue_event({"type": "done", "session_id": 1})
 
         assert state.current_impl_sid is None
         assert state.impl_queue == [3] # Popped 2
@@ -81,14 +81,14 @@ def test_parse_and_distribute_plan(mock_gui_state):
     b.message.content = "<<<<<<< PLAN\nTitle: Subtask A\nPrompt: Do A\n>>>>>>> END"
     sess.bubbles.append(b)
     
-    with patch("gui.create_session") as mock_create_sess, \
-         patch("gui.ensure_user_bubble") as mock_ensure, \
-         patch("gui.start_generation") as mock_start: # Prevent actual start
+    with patch("gui.common.create_session") as mock_create_sess, \
+         patch("gui.common.ensure_user_bubble") as mock_ensure, \
+         patch("gui.common.start_generation") as mock_start: # Prevent actual start
         
         new_sess = ChatSession(id=2)
         mock_create_sess.return_value = new_sess
         
-        gui.parse_and_distribute_plan(sess)
+        gui_common.parse_and_distribute_plan(sess)
         
         # Verify new session created
         assert new_sess.group_id is not None
