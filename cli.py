@@ -420,22 +420,12 @@ Examples:
             
         if args.open:
             path = str(APP_DATA_DIR)
-            if sys.platform == "win32":
-                os.startfile(path)
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            core.open_path_in_os(path)
             print(f"Opened: {path}")
 
         if args.settings:
             path = str(APP_DATA_DIR / "settings.json")
-            if sys.platform == "win32":
-                os.startfile(path)
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            else:
-                subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            core.open_path_in_os(path)
             print(f"Opened: {path}")
 
     elif args.command == "askpass":

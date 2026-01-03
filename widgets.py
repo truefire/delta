@@ -1,18 +1,13 @@
 """Custom widgets and UI helpers for Delta Tool using imgui-bundle."""
 import difflib
 import math
+import time
 import re
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Callable
 
 from imgui_bundle import imgui, imgui_md
-try:
-    from imgui_bundle import imgui_color_text_edit as te
-    _text_editor_available = True
-except ImportError:
-    _text_editor_available = False
-    te = None
 
 # Optional Dependencies
 try:
@@ -1085,3 +1080,65 @@ def render_file_tree(
     sorted_root = sorted(tree.items(), key=lambda x: (x[1] is None, x[0].lower()))
     for name, node in sorted_root:
         render_node(name, node, root_path)
+
+
+def draw_status_icon(draw_list, cx: float, cy: float, status: str, badge: str = None):
+    """Draw a colored status icon at the given center position."""
+    colors = {
+        "running": imgui.get_color_u32(imgui.ImVec4(0.13, 0.59, 0.95, 1.0)),      
+        "running_ask": imgui.get_color_u32(imgui.ImVec4(0.61, 0.15, 0.69, 1.0)),  
+        "running_plan": imgui.get_color_u32(imgui.ImVec4(0.00, 0.73, 0.83, 1.0)), 
+        "queued": imgui.get_color_u32(imgui.ImVec4(1.0, 0.60, 0.0, 1.0)),         
+        "done": imgui.get_color_u32(imgui.ImVec4(0.30, 0.69, 0.31, 1.0)),         
+        "failed": imgui.get_color_u32(imgui.ImVec4(0.96, 0.26, 0.21, 1.0)),       
+        "inactive": imgui.get_color_u32(imgui.ImVec4(0.62, 0.62, 0.62, 1.0)),     
+        "debug": imgui.get_color_u32(imgui.ImVec4(0.96, 0.26, 0.21, 1.0)),        
+    }
+    colors["queued_plan"] = colors["queued"]
+    colors["done_plan"] = colors["done"]
+    colors["done_ask"] = colors["done"]
+    color = colors.get(status, colors["inactive"])
+
+    if status.startswith("running"):
+        cy += math.sin(time.time() * 10.0) * 1.5
+
+    if status == "running":
+        draw_list.add_triangle_filled(
+            imgui.ImVec2(cx - 4, cy - 5),
+            imgui.ImVec2(cx - 4, cy + 5),
+            imgui.ImVec2(cx + 5, cy),
+            color
+        )
+    elif status in ("running_ask", "done_ask"):
+        draw_list.add_circle(imgui.ImVec2(cx - 1, cy - 1), 4, color, 12, 2.0)
+        draw_list.add_line(imgui.ImVec2(cx + 2, cy + 2), imgui.ImVec2(cx + 5, cy + 5), color, 2.0)
+    elif status in ("running_plan", "done_plan", "queued_plan"):
+        draw_list.add_line(imgui.ImVec2(cx - 3, cy - 3), imgui.ImVec2(cx + 3, cy - 3), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx - 3, cy),     imgui.ImVec2(cx + 3, cy),     color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx - 3, cy + 3), imgui.ImVec2(cx + 3, cy + 3), color, 1.5)
+    elif status == "queued":
+        draw_list.add_circle(imgui.ImVec2(cx, cy), 5, color, 12, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx, cy), imgui.ImVec2(cx, cy - 3), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx, cy), imgui.ImVec2(cx + 2, cy), color, 1.5)
+    elif status == "done":
+        draw_list.add_polyline(
+            [imgui.ImVec2(cx - 4, cy), imgui.ImVec2(cx - 1, cy + 3), imgui.ImVec2(cx + 5, cy - 4)],
+            color, imgui.ImDrawFlags_.none, 2.5
+        )
+    elif status == "failed":
+        draw_list.add_line(imgui.ImVec2(cx - 4, cy - 4), imgui.ImVec2(cx + 4, cy + 4), color, 2.5)
+        draw_list.add_line(imgui.ImVec2(cx - 4, cy + 4), imgui.ImVec2(cx + 4, cy - 4), color, 2.5)
+    elif status == "debug":
+        draw_list.add_circle_filled(imgui.ImVec2(cx, cy), 3, color)
+        draw_list.add_line(imgui.ImVec2(cx - 2, cy - 2), imgui.ImVec2(cx - 5, cy - 4), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx + 2, cy - 2), imgui.ImVec2(cx + 5, cy - 4), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx - 3, cy), imgui.ImVec2(cx - 6, cy), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx + 3, cy), imgui.ImVec2(cx + 6, cy), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx - 2, cy + 2), imgui.ImVec2(cx - 5, cy + 4), color, 1.5)
+        draw_list.add_line(imgui.ImVec2(cx + 2, cy + 2), imgui.ImVec2(cx + 5, cy + 4), color, 1.5)
+    else: 
+        draw_list.add_circle_filled(imgui.ImVec2(cx, cy), 4, color, 12)
+
+    if badge:
+        badge_color = colors.get("queued", color)
+        draw_list.add_text(imgui.ImVec2(cx + 7, cy - 6), badge_color, badge)

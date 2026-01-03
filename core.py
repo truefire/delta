@@ -9,6 +9,7 @@ import mimetypes
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,15 @@ from pattern import code_block_pattern, diff_example, search_block_pattern, plan
 logger = logging.getLogger(__name__)
 
 _TOOL_DIR = Path(__file__).parent.resolve()
+
+DEFAULT_HIDDEN = {
+    ".git", ".svn", ".hg", ".DS_Store", "Thumbs.db",
+    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
+    ".vscode", ".idea", ".vs",
+    "venv", ".venv", "env", "node_modules", "site-packages", # Python/Node
+    "dist", "build", "target", "out", "bin", "obj", # Build artifacts
+    "vendor", "coverage"
+}
 
 
 def is_image_file(path: Path | str) -> bool:
@@ -105,6 +115,97 @@ def get_app_data_dir() -> Path:
     return Path(os.getenv("XDG_CONFIG_HOME") or home / ".config") / "deltatool"
 
 
+def open_path_in_os(path: Path | str):
+    """Open a file or directory in the OS default application."""
+    p = str(Path(path).resolve())
+    if sys.platform == "win32":
+        os.startfile(p)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        subprocess.Popen(["xdg-open", p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def create_askpass_wrapper() -> str:
+    """Create a wrapper script for git/ssh to invoke delta askpass."""
+    ipc_dir = APP_DATA_DIR / "ipc"
+    ipc_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Determine how to invoke delta
+    # If running as script: python path/to/delta.py
+    # If installed/frozen: path/to/delta (executable)
+    
+    wrapper_path = ipc_dir / ("askpass.bat" if sys.platform == "win32" else "askpass.sh")
+    
+    delta_cmd = sys.argv[0]
+    full_cmd = ""
+    
+    if delta_cmd.endswith(".py"):
+        # Python script
+        py_exe = sys.executable
+        full_cmd = f'"{py_exe}" "{delta_cmd}" askpass'
+    else:
+        # Executable/Shim
+        full_cmd = f'"{delta_cmd}" askpass'
+
+    if sys.platform == "win32":
+        content = f'@echo off\n{full_cmd} %*\n'
+    else:
+        content = f'#!/bin/sh\n{full_cmd} "$@"\n'
+
+    with open(wrapper_path, "w", encoding="utf-8") as f:
+        f.write(content)
+        
+    if sys.platform != "win32":
+        st = os.stat(wrapper_path)
+        os.chmod(wrapper_path, st.st_mode | stat.S_IEXEC)
+        
+    return str(wrapper_path)
+
+
+def open_terminal_in_os(path: Path | str):
+    """Open a terminal in the specified directory."""
+    p = Path(path).resolve()
+    if sys.platform == "win32":
+        subprocess.Popen("start cmd", shell=True, cwd=p)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", "-a", "Terminal", "."], cwd=p)
+    else:
+        # Try common linux terminals
+        for term in ["x-terminal-emulator", "gnome-terminal", "konsole", "xterm"]:
+            if shutil.which(term):
+                try:
+                    subprocess.Popen([term], cwd=p)
+                    return
+                except Exception:
+                    pass
+
+
+def scan_directory(path: Path) -> tuple[list[str], list[str]]:
+    """Scan a directory for files and folders, excluding default hidden ones.
+    
+    Returns:
+        Tuple of (files, dirs) lists containing names.
+    """
+    files = []
+    dirs = []
+    try:
+        with os.scandir(str(path)) as it:
+            for entry in it:
+                if entry.name.startswith('.') or entry.name in DEFAULT_HIDDEN:
+                    continue
+                if entry.is_file():
+                    files.append(entry.name)
+                elif entry.is_dir():
+                    dirs.append(entry.name)
+    except OSError:
+        pass
+        
+    files.sort(key=lambda s: s.lower())
+    dirs.sort(key=lambda s: s.lower())
+    return files, dirs
+
+
 APP_DATA_DIR = get_app_data_dir()
 APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -118,6 +219,31 @@ SETTINGS_PATH = APP_DATA_DIR / SETTINGS_FILENAME
 DEFAULT_SETTINGS_PATH = _TOOL_DIR / DEFAULT_SETTINGS_FILENAME
 
 
+def load_json_file(path: Path | str, default: Any = None) -> Any:
+    """Load a JSON file safely."""
+    try:
+        p = Path(path)
+        if p.exists():
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        pass
+    return default
+
+
+def save_json_file(path: Path | str, data: Any, indent: int = 2) -> bool:
+    """Save data to a JSON file safely."""
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=indent)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save JSON {path}: {e}")
+        return False
+
+
 def _load_settings() -> dict:
     """Load settings from settings.json."""
     if not SETTINGS_PATH.exists() and DEFAULT_SETTINGS_PATH.exists():
@@ -125,24 +251,18 @@ def _load_settings() -> dict:
             shutil.copy2(DEFAULT_SETTINGS_PATH, SETTINGS_PATH)
         except Exception: pass
 
-    for path in [SETTINGS_PATH, DEFAULT_SETTINGS_PATH]:
-        if path.exists():
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.warning(f"Could not load {path}: {e}")
-    return {}
+    # Try explicit settings path
+    data = load_json_file(SETTINGS_PATH)
+    if data: return data
+    
+    # Fallback to default
+    data = load_json_file(DEFAULT_SETTINGS_PATH)
+    return data or {}
 
 
 def _save_settings(settings: dict) -> None:
     """Save settings to settings.json."""
-    try:
-        # Always save to AppData
-        with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
-    except Exception as e:
-        logger.warning(f"Could not save settings.json: {e}")
+    save_json_file(SETTINGS_PATH, settings)
 
 
 def update_core_settings(api_key: str, base_url: str, models: dict, git_branch: str) -> None:
@@ -174,33 +294,20 @@ _settings = _load_settings()
 
 def load_cwd_data(filepath: Path | str) -> Any:
     """Load data associated with the current CWD."""
-    try:
-        path = Path(filepath)
-        if path.exists():
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            return data.get(str(Path.cwd()))
-    except Exception:
-        pass
+    data = load_json_file(filepath, {})
+    if isinstance(data, dict):
+        return data.get(str(Path.cwd()))
     return None
 
 
 def save_cwd_data(filepath: Path | str, value: Any, indent: int = 2) -> None:
     """Save data associated with current CWD."""
-    path = Path(filepath)
-    try:
-        data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    except Exception:
+    data = load_json_file(filepath, {})
+    if not isinstance(data, dict):
         data = {}
         
     data[str(Path.cwd())] = value
-    
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=indent)
-    except Exception as e:
-        logger.warning(f"Warning saving {path.name}: {e}")
+    save_json_file(filepath, data, indent)
 
 
 class DeltaToolError(Exception):

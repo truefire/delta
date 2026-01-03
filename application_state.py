@@ -24,15 +24,6 @@ PRESETS_PATH = str(APP_DATA_DIR / "selection_presets.json")
 SESSIONS_DIR = APP_DATA_DIR / "sessions"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
-DEFAULT_HIDDEN = {
-    ".git", ".svn", ".hg", ".DS_Store", "Thumbs.db",
-    "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox",
-    ".vscode", ".idea", ".vs",
-    "venv", ".venv", "env", "node_modules", "site-packages",
-    "dist", "build", "target", "out", "bin", "obj",
-    "vendor", "coverage"
-}
-
 def to_relative(path: Path) -> Path:
     """Convert path to relative to CWD if possible."""
     try:
@@ -430,11 +421,8 @@ def save_state(name: str):
         "chat_input_height": state.chat_input_height
     }
     
-    try:
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-    except Exception as e:
-        log_message(f"Error saving state: {e}")
+    if not core.save_json_file(filename, data):
+        log_message(f"Error saving state to {filename}")
 
 def load_state(name: str):
     """Load program state from a save file."""
@@ -444,9 +432,11 @@ def load_state(name: str):
         return
         
     try:
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            
+        data = core.load_json_file(filename)
+        if not data:
+            log_message(f"Empty or invalid save file: {filename}")
+            return
+
         state.sessions.clear()
         
         state.next_session_id = data.get("next_session_id", 1)
@@ -486,9 +476,9 @@ def load_individual_session(save_name: str, session_idx: int):
     """Load a single session from a save into the current state."""
     filename = SESSIONS_DIR / f"{save_name}.json"
     try:
-        with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            
+        data = core.load_json_file(filename)
+        if not data: return
+
         sessions_list = data.get("sessions", [])
         if session_idx < 0 or session_idx >= len(sessions_list):
             return
@@ -546,37 +536,21 @@ def get_saves_list() -> list[dict]:
     saves.sort(key=lambda x: x["mtime"], reverse=True)
     return saves
 
-def _load_json(path: str, default: Any) -> Any:
-    try:
-        if Path(path).exists():
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return default
-
-def _save_json(path: str, data: Any) -> None:
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-    except Exception:
-        pass
-
 def load_prompt_history():
-    state.prompt_history = _load_json(PROMPT_HISTORY_PATH, [])
+    state.prompt_history = core.load_json_file(PROMPT_HISTORY_PATH, [])
 
 def save_prompt_history():
     if MAX_PROMPT_HISTORY > 0:
         data = state.prompt_history[-MAX_PROMPT_HISTORY:]
     else:
         data = state.prompt_history
-    _save_json(PROMPT_HISTORY_PATH, data)
+    core.save_json_file(PROMPT_HISTORY_PATH, data)
 
 def load_cwd_history():
-    state.cwd_history = _load_json(CWD_HISTORY_PATH, [])
+    state.cwd_history = core.load_json_file(CWD_HISTORY_PATH, [])
 
 def save_cwd_history():
-    _save_json(CWD_HISTORY_PATH, state.cwd_history)
+    core.save_json_file(CWD_HISTORY_PATH, state.cwd_history)
 
 def add_to_cwd_history(path_str: str):
     try:
@@ -639,7 +613,7 @@ def load_fileset():
         legacy_path = APP_DATA_DIR / "filesets.json"
         if legacy_path.exists():
             try:
-                data = _load_json(str(legacy_path), {})
+                data = core.load_json_file(str(legacy_path), {})
                 cwd = str(Path.cwd())
                 if data.get("cwd") == cwd:
                     state.selected_files = {to_relative(Path(p)) for p in data.get("files", [])}
@@ -677,7 +651,7 @@ def load_presets():
         return
 
     # Check for legacy global presets to migrate
-    raw = _load_json(PRESETS_PATH, {})
+    raw = core.load_json_file(PRESETS_PATH, {})
     # Legacy check: if values look like preset objects [{"files": [...]}]
     is_legacy = False
     for v in raw.values():
@@ -744,24 +718,7 @@ def _scan_folder_impl(folder_path: Path):
         return
 
     # List content
-    files = []
-    dirs = []
-    
-    try:
-        with os.scandir(str(folder_path)) as it:
-            for entry in it:
-                if entry.name.startswith('.') or entry.name in DEFAULT_HIDDEN:
-                    continue
-                if entry.is_file():
-                    files.append(entry.name)
-                elif entry.is_dir():
-                    dirs.append(entry.name)
-    except OSError:
-        return
-
-    # Sort
-    files.sort(key=lambda s: s.lower())
-    dirs.sort(key=lambda s: s.lower())
+    files, dirs = core.scan_directory(folder_path)
 
     # Update Tree safely
     with tree_lock:

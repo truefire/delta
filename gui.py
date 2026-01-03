@@ -33,7 +33,7 @@ from application_state import (
     add_to_cwd_history, load_cwd_history, SESSIONS_DIR,
     tree_lock, queue_scan_request, quicksave_session
 )
-from widgets import ChatBubble, DiffViewer, render_file_tree, DiffHunk
+from widgets import ChatBubble, DiffViewer, render_file_tree, DiffHunk, draw_status_icon
 from styles import STYLE, apply_imgui_theme
 from window_helpers import yank_window, flash_screens
 
@@ -1183,31 +1183,14 @@ def render_settings_panel():
 
     imgui.same_line()
     if imgui.small_button("CMD"):
-        if sys.platform == "win32":
-            subprocess.Popen("start cmd", shell=True, cwd=Path.cwd())
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", "-a", "Terminal", "."], cwd=Path.cwd())
-        else:
-            try:
-                subprocess.Popen(["x-terminal-emulator"], cwd=Path.cwd())
-            except Exception:
-                try:
-                    subprocess.Popen(["gnome-terminal"], cwd=Path.cwd())
-                except Exception:
-                    log_message("Could not detect Linux terminal")
+        core.open_terminal_in_os(Path.cwd())
 
     if imgui.is_item_hovered():
         imgui.set_tooltip("Open terminal in CWD.\nRight-click for File Explorer.")
 
     if imgui.begin_popup_context_item("cmd_explore_ctx"):
         if imgui.selectable("Explore", False)[0]:
-            path = str(Path.cwd())
-            if sys.platform == "win32":
-                os.startfile(path)
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", path])
-            else:
-                subprocess.Popen(["xdg-open", path])
+            core.open_path_in_os(Path.cwd())
         imgui.end_popup()
 
     imgui.separator()
@@ -1491,41 +1474,7 @@ def render_system_prompt_popup():
             
         imgui.end_popup()
 
-def _create_askpass_wrapper():
-    """Create a wrapper script for git/ssh to invoke delta askpass."""
-    ipc_dir = APP_DATA_DIR / "ipc"
-    ipc_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Determine how to invoke delta
-    # If running as script: python path/to/delta.py
-    # If installed/frozen: path/to/delta (executable)
-    
-    wrapper_path = ipc_dir / ("askpass.bat" if sys.platform == "win32" else "askpass.sh")
-    
-    delta_cmd = sys.argv[0]
-    full_cmd = ""
-    
-    if delta_cmd.endswith(".py"):
-        # Python script
-        py_exe = sys.executable
-        full_cmd = f'"{py_exe}" "{delta_cmd}" askpass'
-    else:
-        # Executable/Shim
-        full_cmd = f'"{delta_cmd}" askpass'
 
-    if sys.platform == "win32":
-        content = f'@echo off\n{full_cmd} %*\n'
-    else:
-        content = f'#!/bin/sh\n{full_cmd} "$@"\n'
-
-    with open(wrapper_path, "w", encoding="utf-8") as f:
-        f.write(content)
-        
-    if sys.platform != "win32":
-        st = os.stat(wrapper_path)
-        os.chmod(wrapper_path, st.st_mode | stat.S_IEXEC)
-        
-    return str(wrapper_path)
 
 def _perform_git_pull():
     state.update_in_progress = True
@@ -1533,7 +1482,7 @@ def _perform_git_pull():
     
     def worker():
         try:
-            askpass_script = _create_askpass_wrapper()
+            askpass_script = core.create_askpass_wrapper()
             
             env = os.environ.copy()
             env["GIT_ASKPASS"] = askpass_script
@@ -2218,66 +2167,7 @@ def render_files_panel():
 
         imgui.end_popup()
 
-def _draw_tab_icon(draw_list, cx: float, cy: float, status: str, badge: str = None):
-    """Draw a colored status icon at the given center position."""
-    colors = {
-        "running": imgui.get_color_u32(imgui.ImVec4(0.13, 0.59, 0.95, 1.0)),      
-        "running_ask": imgui.get_color_u32(imgui.ImVec4(0.61, 0.15, 0.69, 1.0)),  
-        "running_plan": imgui.get_color_u32(imgui.ImVec4(0.00, 0.73, 0.83, 1.0)), 
-        "queued": imgui.get_color_u32(imgui.ImVec4(1.0, 0.60, 0.0, 1.0)),         
-        "done": imgui.get_color_u32(imgui.ImVec4(0.30, 0.69, 0.31, 1.0)),         
-        "failed": imgui.get_color_u32(imgui.ImVec4(0.96, 0.26, 0.21, 1.0)),       
-        "inactive": imgui.get_color_u32(imgui.ImVec4(0.62, 0.62, 0.62, 1.0)),     
-        "debug": imgui.get_color_u32(imgui.ImVec4(0.96, 0.26, 0.21, 1.0)),        
-    }
-    colors["queued_plan"] = colors["queued"]
-    colors["done_plan"] = colors["done"]
-    colors["done_ask"] = colors["done"]
-    color = colors.get(status, colors["inactive"])
 
-    if status.startswith("running"):
-        cy += math.sin(time.time() * 10.0) * 1.5
-
-    if status == "running":
-        draw_list.add_triangle_filled(
-            imgui.ImVec2(cx - 4, cy - 5),
-            imgui.ImVec2(cx - 4, cy + 5),
-            imgui.ImVec2(cx + 5, cy),
-            color
-        )
-    elif status in ("running_ask", "done_ask"):
-        draw_list.add_circle(imgui.ImVec2(cx - 1, cy - 1), 4, color, 12, 2.0)
-        draw_list.add_line(imgui.ImVec2(cx + 2, cy + 2), imgui.ImVec2(cx + 5, cy + 5), color, 2.0)
-    elif status in ("running_plan", "done_plan", "queued_plan"):
-        draw_list.add_line(imgui.ImVec2(cx - 3, cy - 3), imgui.ImVec2(cx + 3, cy - 3), color, 1.5)
-        draw_list.add_line(imgui.ImVec2(cx - 3, cy),     imgui.ImVec2(cx + 3, cy),     color, 1.5)
-        draw_list.add_line(imgui.ImVec2(cx - 3, cy + 3), imgui.ImVec2(cx + 3, cy + 3), color, 1.5)
-    elif status == "queued":
-        draw_list.add_circle(imgui.ImVec2(cx, cy), 5, color, 12, 1.5)
-        draw_list.add_line(imgui.ImVec2(cx, cy), imgui.ImVec2(cx, cy - 3), color, 1.5)
-        draw_list.add_line(imgui.ImVec2(cx, cy), imgui.ImVec2(cx + 2, cy), color, 1.5)
-    elif status == "done":
-        draw_list.add_polyline(
-            [imgui.ImVec2(cx - 4, cy), imgui.ImVec2(cx - 1, cy + 3), imgui.ImVec2(cx + 5, cy - 4)],
-            color, imgui.ImDrawFlags_.none, 2.5
-        )
-    elif status == "failed":
-        draw_list.add_line(imgui.ImVec2(cx - 4, cy - 4), imgui.ImVec2(cx + 4, cy + 4), color, 2.5)
-        draw_list.add_line(imgui.ImVec2(cx - 4, cy + 4), imgui.ImVec2(cx + 4, cy - 4), color, 2.5)
-    elif status == "debug":
-        draw_list.add_circle_filled(imgui.ImVec2(cx, cy), 3, color)
-        draw_list.add_line(imgui.ImVec2(cx - 2, cy - 2), imgui.ImVec2(cx - 5, cy - 4), color, 1.5)
-        draw_list.add_line(imgui.ImVec2(cx + 2, cy - 2), imgui.ImVec2(cx + 5, cy - 4), color, 1.5)
-        draw_list.add_line(imgui.ImVec2(cx - 3, cy), imgui.ImVec2(cx - 6, cy), color, 1.5)
-        draw_list.add_line(imgui.ImVec2(cx + 3, cy), imgui.ImVec2(cx + 6, cy), color, 1.5)
-        draw_list.add_line(imgui.ImVec2(cx - 2, cy + 2), imgui.ImVec2(cx - 5, cy + 4), color, 1.5)
-        draw_list.add_line(imgui.ImVec2(cx + 2, cy + 2), imgui.ImVec2(cx + 5, cy + 4), color, 1.5)
-    else: 
-        draw_list.add_circle_filled(imgui.ImVec2(cx, cy), 4, color, 12)
-
-    if badge:
-        badge_color = colors.get("queued", color)
-        draw_list.add_text(imgui.ImVec2(cx + 7, cy - 6), badge_color, badge)
 
 def perform_session_revert(session, index: int):
     """Revert session state to a specific bubble index."""
@@ -2418,7 +2308,7 @@ def render_chat_panel():
         cx = (btn_min.x + btn_max.x) / 2
         cy = (btn_min.y + btn_max.y) / 2
 
-        _draw_tab_icon(draw_list, cx, cy, status, badge)
+        draw_status_icon(draw_list, cx, cy, status, badge)
         
         if is_grouped:
             col = STYLE.get_u32("sel_bg")
