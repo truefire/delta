@@ -1,7 +1,7 @@
 import pytest
 import shutil
 from pathlib import Path
-from core import BackupManager
+from core.backups import BackupManager
 
 @pytest.fixture
 def backup_mgr(temp_cwd):

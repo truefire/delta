@@ -1,6 +1,8 @@
 import pytest
 from pathlib import Path
-from core import parse_diffs, apply_diffs, _find_best_fuzzy_match, build_tolerant_regex, _execute_attempt, run_command
+from core import parse_diffs, apply_diffs, build_tolerant_regex, run_command
+from core.patching import _find_best_fuzzy_match
+from core.workflow import _execute_attempt
 import sys
 from tests.conftest import stub_to_diff, wrap_in_code_block
 
@@ -357,7 +359,8 @@ def func():
         assert f.read_text() == expected
 
 from unittest.mock import MagicMock, patch
-from core import is_image_file, validate_files, _calculate_cost, generate, process_request, AVAILABLE_MODELS
+from core import is_image_file, validate_files, generate, process_request, AVAILABLE_MODELS
+from core.llm import _calculate_cost
 
 def test_is_image_file():
     assert is_image_file("image.png")
