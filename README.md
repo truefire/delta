@@ -138,6 +138,17 @@ delta config --open          # Open AppData folder
 | `-p, --preset` | Use files from a specific preset                          |
 | `--dry-run` | Perform a dry run (exit without applying changes)         |
 
+## Context Management
+
+A large part of using delta is deciding which files to include in the context. This is what enables the LLM to use its full processing power on writing code rather than agentically thrashing through your codebase to find the files it needs.
+
+To this end, delta includes tooling for managing the context as frictionlessly as possible.
+- An efficient project explorer designed for ergonomic file selection allows for quick context population.
+- File groups can be defined and then selected / added / removed from context
+- Any files included in the context can be toggled on/off temporarily in one click
+
+<img src="https://github.com/user-attachments/assets/f21d8689-9131-48b2-85f8-524fb0a8a858" height="400"/>
+
 ## LLM Providers
 
 Delta uses the standard OpenAI client library, meaning it is compatible with any OpenAI-compatible API. This includes:
@@ -157,7 +168,7 @@ To configure the `api_base_url`, `api_key`, and custom model definitions:
 - `claude-4.5-opus` is also pretty strong.
 - `gemini-3-flash-preview` is a strong cheap/fast model for simpler tasks.
 
-## Why not use <other tool> instead?
+## Why not use \<other tool\> instead?
 
 Other tools such as Claude Code work pretty good these days, especially for "unsupervised" work -- use them if they fit your use case better.
 
