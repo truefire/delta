@@ -765,7 +765,7 @@ class GitShadowHandler:
         
         # 3. Write tree object
         ok, tree_oid = self._run(["write-tree"])
-        if not ok: return False
+        if not ok: return None
         
         # 4. Get parent commit (current tip of shadow branch)
         ok, parent_oid = self._run(["rev-parse", self.branch])
@@ -901,7 +901,7 @@ class BackupManager:
         try:
             rel_path = filepath.relative_to(self._project_dir)
         except ValueError:
-            rel_path = str(filepath).replace(":", "")
+            rel_path = Path(str(filepath).replace(":", ""))
 
         safe_name = str(rel_path).replace(os.sep, "__").replace("/", "__")
         backup_path = self.backup_dir / f"{session_id}_{safe_name}.bak"

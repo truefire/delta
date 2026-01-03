@@ -2188,8 +2188,9 @@ def render_files_panel():
         imgui.table_setup_column("Tokens", imgui.TableColumnFlags_.width_fixed, 50)
         imgui.table_setup_column("File", imgui.TableColumnFlags_.width_stretch)
 
+        row_height = imgui.get_frame_height()
         clipper = imgui.ListClipper()
-        clipper.begin(len(sorted_files))
+        clipper.begin(len(sorted_files), row_height)
         while clipper.step():
             for i in range(clipper.display_start, clipper.display_end):
                 f = sorted_files[i]
@@ -2200,7 +2201,7 @@ def render_files_panel():
                 _, tokens, _ = get_file_stats(f)
                 file_display = str(f.relative_to(Path.cwd())) if f.is_absolute() else str(f)
 
-                imgui.table_next_row()
+                imgui.table_next_row(0, row_height)
 
                 imgui.table_next_column()
                 imgui.push_id(str(f))
@@ -2238,6 +2239,7 @@ def render_files_panel():
 
         imgui.end_table()
 
+    imgui.dummy(imgui.ImVec2(0, 30))
     imgui.end_child()
 
     if imgui.button("Check All"):
@@ -3472,6 +3474,7 @@ def render_context_manager():
 
         imgui.end_table()
 
+    imgui.dummy(imgui.ImVec2(0, 30))
     imgui.end_child()
 
     imgui.columns(1)
