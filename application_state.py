@@ -405,6 +405,84 @@ def setup_logging(enable_gui=True):
 def rebuild_session_bubbles(session: ChatSession):
     """Rebuild ChatBubbles from history."""
     session.bubbles = []
+
+    if session.is_filedig:
+        # Reconstruct filedig session to match runtime appearance
+        
+        # 1. User Prompt
+        user_content = session.last_prompt
+        if not user_content:
+            # Try to recover from history if last_prompt missing
+            prefix = "Find files relevant to this request: "
+            for msg in session.history:
+                if msg.get("role") == "user":
+                    c = str(msg.get("content", ""))
+                    if c.startswith(prefix):
+                        user_content = c[len(prefix):]
+                    else:
+                        user_content = c
+                    break
+        
+        if user_content:
+            bubble = ChatBubble("user", 0)
+            bubble.update(user_content)
+            bubble.flush()
+            session.bubbles.append(bubble)
+        
+        # 2. Tools
+        current_tool_bubble = None
+        
+        for msg in session.history:
+            role = msg.get("role")
+            
+            if role == "assistant":
+                content = msg.get("content")
+                tool_calls = msg.get("tool_calls")
+                
+                if content:
+                    current_tool_bubble = None
+                    bubble = ChatBubble("assistant", len(session.bubbles))
+                    bubble.update(content)
+                    bubble.flush()
+                    session.bubbles.append(bubble)
+                
+                if tool_calls:
+                    if not current_tool_bubble:
+                        current_tool_bubble = ChatBubble("tool", len(session.bubbles))
+                        session.bubbles.append(current_tool_bubble)
+                    
+                    for tc in tool_calls:
+                        fname = tc.get("function", {}).get("name", "unknown")
+                        args_str = tc.get("function", {}).get("arguments", "{}")
+                        try:
+                            args = json.loads(args_str)
+                            readable = " ".join([f"{k}='{v}'" for k,v in args.items()])
+                        except:
+                            readable = args_str
+                        current_tool_bubble.update(f"> Running: {fname} {readable}\n")
+            
+            elif role == "tool":
+                if not current_tool_bubble:
+                    current_tool_bubble = ChatBubble("tool", len(session.bubbles))
+                    session.bubbles.append(current_tool_bubble)
+                
+                name = msg.get("name", "tool")
+                result = msg.get("content", "")
+                current_tool_bubble.update(f"> {name} finished.\nOutput:\n{result}\n")
+        
+        if current_tool_bubble:
+            current_tool_bubble.flush()
+
+        # 3. Completion info
+        if session.completed:
+             count = sum(len(m.get("tool_calls", [])) for m in session.history if m.get("role") == "assistant" and m.get("tool_calls"))
+             done_bubble = ChatBubble("assistant", len(session.bubbles))
+             done_bubble.update(f"Completed in {count} toolcall(s).")
+             done_bubble.flush()
+             session.bubbles.append(done_bubble)
+
+        return
+
     for i, msg in enumerate(session.history):
         role = msg.get("role", "user")
         

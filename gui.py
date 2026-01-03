@@ -269,6 +269,9 @@ def handle_queue_event(event: dict):
         # 0. Grouping logic: Ensure filedig session has a group, and new session joins it
         filedig_sess = state.sessions.get(session_id)
         target_group_id = None
+        target_planning = False
+        target_ask = False
+
         if filedig_sess:
             filedig_sess.completed = True
             filedig_sess.failed = False
@@ -282,6 +285,9 @@ def handle_queue_event(event: dict):
                 filedig_sess.group_id = state.next_group_id
                 state.next_group_id += 1
             target_group_id = filedig_sess.group_id
+            
+            target_planning = filedig_sess.is_planning
+            target_ask = filedig_sess.is_ask_mode
             
         # 2. Prepare context files for Run session (do NOT add to global selection)
         valid_files = []
@@ -307,7 +313,7 @@ def handle_queue_event(event: dict):
         new_sess.input_text = ""
         new_sess.last_prompt = full_prompt
         
-        _submit_common(new_sess, full_prompt, is_planning=False, ask_mode=False, save_to_history=False)
+        _submit_common(new_sess, full_prompt, is_planning=target_planning, ask_mode=target_ask, save_to_history=False)
 
 def ensure_user_bubble(session, text: str):
     """Ensure the latest message is a user bubble with the given text."""
@@ -617,7 +623,7 @@ def submit_plan():
 
     _submit_common(session, prompt, is_planning=True, ask_mode=False)
 
-def submit_filedig():
+def submit_filedig(is_planning=False, ask_mode=False):
     """Submit a filedig request."""
     session = get_active_session()
     if not session: return
@@ -626,7 +632,7 @@ def submit_filedig():
     if not prompt: return
     
     # Filedig doesn't care about current files, it finds them.
-    _submit_common(session, prompt, is_planning=False, ask_mode=False, is_filedig=True)
+    _submit_common(session, prompt, is_planning=is_planning, ask_mode=ask_mode, is_filedig=True)
 
 def parse_and_distribute_plan(session):
     """Parse a completed plan and queue sub-tasks."""
@@ -2816,6 +2822,13 @@ def render_chat_session(session):
         if imgui.is_item_hovered():
             imgui.set_tooltip("Agentic search: Finds relevant files and then starts a Run.\nWorks best if your prompt includes specific terms to search for.")
 
+        if imgui.begin_popup_context_item("filedig_ctx"):
+            if imgui.menu_item("Filedig -> Plan", "", False)[0]:
+                submit_filedig(is_planning=True)
+            if imgui.menu_item("Filedig -> Ask", "", False)[0]:
+                submit_filedig(ask_mode=True)
+            imgui.end_popup()
+
 
     if session.is_generating and not is_cancelling:
         imgui.same_line()
@@ -2848,7 +2861,16 @@ def render_chat_session(session):
     # Context calculations
     context_tokens = 0
     if not session.is_filedig:
-        checked_files = [f for f in state.selected_files if state.file_checked.get(f, True) and state.file_exists_cache.get(f, True)]
+        if session.request_start_time > 0 and not session.is_queued:
+            # Show actual context used for this request
+            checked_files = [Path(f) for f in session.sent_files]
+        elif session.forced_context_files is not None:
+            # Show context that will be used (e.g. from filedig)
+            checked_files = [Path(f) for f in session.forced_context_files]
+        else:
+            # Show current selection
+            checked_files = [f for f in state.selected_files if state.file_checked.get(f, True) and state.file_exists_cache.get(f, True)]
+
         context_tokens = sum(get_file_stats(f)[1] for f in checked_files)
 
     prompt_tokens = estimate_tokens(session.input_text)
