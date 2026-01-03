@@ -7,7 +7,7 @@ import core
 def mock_openai(monkeypatch):
     mock_client = MagicMock()
     mock_create_client = MagicMock(return_value=mock_client)
-    monkeypatch.setattr("core._create_openai_client", mock_create_client)
+    monkeypatch.setattr("core.workflow._create_openai_client", mock_create_client)
     return mock_client
 
 def create_tool_call_response(tool_name, args):

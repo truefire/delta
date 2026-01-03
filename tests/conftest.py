@@ -24,15 +24,20 @@ def temp_cwd():
 @pytest.fixture
 def mock_settings(monkeypatch):
     """Mock core settings."""
-    import core
+    import sys
+    import core.config
+
+    # Access module via sys.modules to bypass 'config' object shadowing in core namespace
+    config_mod = sys.modules["core.config"]
+
     # Patch default settings dict
     settings = {
         "backup_enabled": True,
         "use_git_backup": False,
         "git_backup_branch": "delta-backup-test"
     }
-    monkeypatch.setattr(core, "_settings", settings)
-    monkeypatch.setattr(core.config, "backup_enabled", True)
+    monkeypatch.setattr(config_mod, "_settings", settings)
+    monkeypatch.setattr(config_mod.config, "backup_enabled", True)
     return settings
 
 @pytest.fixture(autouse=True)
@@ -43,6 +48,9 @@ def mock_app_data(tmp_path):
     (temp_app_data / "sessions").mkdir(exist_ok=True)
     
     with patch("core.APP_DATA_DIR", temp_app_data), \
+         patch("core.config.APP_DATA_DIR", temp_app_data), \
+         patch("core.backups.APP_DATA_DIR", temp_app_data), \
+         patch("core.fs.APP_DATA_DIR", temp_app_data), \
          patch("core.SETTINGS_PATH", temp_app_data / "settings.json"), \
          patch("core.BACKUP_DIR", str(temp_app_data / "backups")), \
          patch("application_state.APP_DATA_DIR", temp_app_data), \

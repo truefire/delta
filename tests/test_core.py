@@ -397,7 +397,7 @@ def test_cost_calculation():
     cost, text = _calculate_cost(0, 500_000, "test-model")
     assert cost == 1.0 # 0.5 * 2
 
-@patch("core._create_openai_client")
+@patch("core.llm._create_openai_client")
 def test_generate_simple(mock_create_client):
     # Mock response
     mock_client = MagicMock()
@@ -417,7 +417,7 @@ def test_generate_simple(mock_create_client):
     res = generate(["dummy.txt"], "prompt")
     assert res == "result"
 
-@patch("core._create_openai_client")
+@patch("core.llm._create_openai_client")
 def test_generate_sharding(mock_create_client):
     """Test that it loops when finish_reason='length'."""
     mock_client = MagicMock()
@@ -455,8 +455,8 @@ def test_generate_sharding(mock_create_client):
     assert res == "Part 1...Part 2"
     assert mock_client.chat.completions.create.call_count == 2
 
-@patch("core.generate")
-@patch("core.apply_diffs")
+@patch("core.workflow.generate")
+@patch("core.workflow.apply_diffs")
 def test_process_request_flow(mock_apply, mock_generate, temp_cwd):
     # Setup
     (temp_cwd / "main.py").touch()
@@ -475,7 +475,7 @@ def test_process_request_flow(mock_apply, mock_generate, temp_cwd):
     mock_generate.assert_called()
     mock_apply.assert_called()
 
-@patch("core.generate")
+@patch("core.workflow.generate")
 def test_process_request_validation_fail(mock_generate, temp_cwd):
     # Test file validation fail
     res = process_request(
@@ -488,9 +488,9 @@ def test_process_request_validation_fail(mock_generate, temp_cwd):
     assert "validation failed" in res["message"]
     mock_generate.assert_not_called()
 
-@patch("core.generate")
-@patch("core.apply_diffs")
-@patch("core._run_validation")
+@patch("core.workflow.generate")
+@patch("core.workflow.apply_diffs")
+@patch("core.workflow._run_validation")
 def test_process_request_with_validation_cmd(mock_run_val, mock_apply, mock_gen, temp_cwd):
     (temp_cwd / "main.py").touch()
     mock_gen.return_value = "diffs"
@@ -537,12 +537,12 @@ def test_undo_last_changes_delegation():
     from core import undo_last_changes
     from unittest.mock import patch
     
-    with patch("core.backup_manager") as mock_bm:
+    with patch("core.backups.backup_manager") as mock_bm:
         mock_bm.get_sessions.return_value = ["s1"]
         mock_bm.undo_session.return_value = {"res": "ok"}
         
         # Ensure config doesn't force git
-        with patch("core.config.use_git_backup", False):
+        with patch("core.config.config.use_git_backup", False):
             res = undo_last_changes()
             mock_bm.undo_session.assert_called_with("s1")
             assert res == {"res": "ok"}
@@ -551,8 +551,8 @@ def test_undo_last_changes_git_mode():
     from core import undo_last_changes
     from unittest.mock import patch, MagicMock
     
-    with patch("core.GitShadowHandler") as MockGit, \
-         patch("core.config") as mock_conf:
+    with patch("core.backups.GitShadowHandler") as MockGit, \
+         patch("core.config.config") as mock_conf:
         
         mock_conf.use_git_backup = True
         mock_conf.backup_enabled = True
@@ -573,8 +573,8 @@ def test_get_available_backups_merged():
     from core import get_available_backups
     from unittest.mock import patch
     
-    with patch("core.backup_manager") as mock_bm, \
-         patch("core.GitShadowHandler") as MockGit:
+    with patch("core.backups.backup_manager") as mock_bm, \
+         patch("core.backups.GitShadowHandler") as MockGit:
         
         # File backup (OLDER)
         mock_bm.get_sessions.return_value = ["projectHash_20230101_120000_000"]
@@ -600,9 +600,9 @@ def test_get_available_backups_merged():
 class TestExecuteAttempt:
     @pytest.fixture
     def mock_deps(self):
-        with patch("core.generate") as mock_gen, \
-             patch("core.apply_diffs") as mock_apply, \
-             patch("core._run_validation") as mock_val, \
+        with patch("core.workflow.generate") as mock_gen, \
+             patch("core.workflow.apply_diffs") as mock_apply, \
+             patch("core.workflow._run_validation") as mock_val, \
              patch("core.file_cache") as mock_cache:
             yield {
                 "generate": mock_gen,
@@ -621,7 +621,8 @@ class TestExecuteAttempt:
             output_func=MagicMock(), stream_func=None, cancel_event=None,
             validation_cmd="", validation_timeout=0, verify=False,
             ambiguous_mode="replace_all", allow_new_files=True,
-            on_file_added=None, on_diff_failure=None, on_validation_failure=None
+            on_file_added=None, on_diff_failure=None, on_validation_failure=None,
+            on_validation_start=None, on_validation_success=None, confirmation_callback=None
         )
         
         assert success is True
@@ -639,7 +640,8 @@ class TestExecuteAttempt:
             output_func=MagicMock(), stream_func=None, cancel_event=None,
             validation_cmd="pytest", validation_timeout=10, verify=False,
             ambiguous_mode="replace_all", allow_new_files=True,
-            on_file_added=None, on_diff_failure=None, on_validation_failure=None
+            on_file_added=None, on_diff_failure=None, on_validation_failure=None,
+            on_validation_start=None, on_validation_success=None, confirmation_callback=None
         )
         
         assert success is False
@@ -656,7 +658,8 @@ class TestExecuteAttempt:
             output_func=MagicMock(), stream_func=None, cancel_event=None,
             validation_cmd="", validation_timeout=0, verify=False,
             ambiguous_mode="replace_all", allow_new_files=True,
-            on_file_added=None, on_diff_failure=MagicMock(), on_validation_failure=None
+            on_file_added=None, on_diff_failure=MagicMock(), on_validation_failure=None,
+            on_validation_start=None, on_validation_success=None, confirmation_callback=None
         )
         
         assert success is False
@@ -672,7 +675,8 @@ class TestExecuteAttempt:
             output_func=MagicMock(), stream_func=None, cancel_event=None,
             validation_cmd="", validation_timeout=0, verify=True, # Verify Enabled
             ambiguous_mode="replace_all", allow_new_files=True,
-            on_file_added=None, on_diff_failure=None, on_validation_failure=MagicMock()
+            on_file_added=None, on_diff_failure=None, on_validation_failure=MagicMock(),
+            on_validation_start=None, on_validation_success=None, confirmation_callback=None
         )
         
         assert success is False
@@ -697,9 +701,9 @@ class TestRunCommand:
 class TestProcessRequestModes:
     @pytest.fixture
     def mock_gen_apply(self):
-        with patch("core.generate") as mk_gen, \
-             patch("core.apply_diffs") as mk_apply, \
-             patch("core._run_validation") as mk_val:
+        with patch("core.workflow.generate") as mk_gen, \
+             patch("core.workflow.apply_diffs") as mk_apply, \
+             patch("core.workflow._run_validation") as mk_val:
             yield mk_gen, mk_apply, mk_val
 
     def test_plan_mode(self, temp_cwd, mock_gen_apply):
@@ -782,19 +786,22 @@ class TestProcessRequestModes:
 
     def test_update_core_settings(self, mock_settings):
         # mock_settings fixture (conftest) patches core._settings
-        from core import update_core_settings, API_KEY, AVAILABLE_MODELS, config
+        from core import update_core_settings, config
+        import sys
+        
+        # Ensure we get the module, not the shadowed object
+        config_module = sys.modules["core.config"]
         
         new_models = {"new-model": {"input": 1.0, "output": 2.0}}
         
         # Need to patch save_settings to avoid file IO error in tests
-        with patch("core._save_settings"):
+        with patch("core.config._save_settings"):
             update_core_settings("new_key", "http://new.url", new_models, "new-branch")
             
             # Check globals updated
-            from core import API_KEY, API_BASE_URL, AVAILABLE_MODELS
-            assert API_KEY == "new_key"
-            assert API_BASE_URL == "http://new.url"
-            assert "new-model" in AVAILABLE_MODELS
+            assert config_module.API_KEY == "new_key"
+            assert config_module.API_BASE_URL == "http://new.url"
+            assert "new-model" in config_module.AVAILABLE_MODELS
             assert config.git_backup_branch == "new-branch"
 
     def test_validation_infinite_loop_prevention(self, temp_cwd, mock_gen_apply):

@@ -2,10 +2,11 @@ import pytest
 import shutil
 import subprocess
 from pathlib import Path
-from core import GitShadowHandler, is_git_installed
+from core import GitShadowHandler, is_git_installed, force_io_cache_refresh
 
 @pytest.fixture
 def git_repo(temp_cwd):
+    force_io_cache_refresh()
     if not is_git_installed():
         pytest.skip("Git not installed")
     
@@ -18,6 +19,8 @@ def git_repo(temp_cwd):
     f.write_text("print('init')")
     subprocess.run(["git", "add", "."], cwd=temp_cwd)
     subprocess.run(["git", "commit", "-m", "Initial"], cwd=temp_cwd)
+    
+    force_io_cache_refresh()
     return temp_cwd
 
 def test_shadow_branch_creation(git_repo):

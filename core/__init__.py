@@ -5,7 +5,7 @@ from .config import (
     AVAILABLE_MODELS, API_BASE_URL, TOKENS_PER_CHAR_ESTIMATE,
     MAX_PROMPT_HISTORY, QUEUE_POLL_INTERVAL_MS, update_core_settings, 
     load_json_file, save_json_file,
-    _TOOL_DIR, estimate_tokens
+    _TOOL_DIR, estimate_tokens, SETTINGS_PATH
 )
 
 from .fs import (
@@ -36,13 +36,11 @@ from .workflow import (
 )
 
 from .analysis import (
-    open_diff_report
+    open_diff_report, _get_git_changes
 )
 
 import os
 # Re-export exceptions
 class DeltaToolError(Exception): pass
-class CancelledError(Exception): pass
 class DiffApplicationError(Exception): pass
 class ValidationError(Exception): pass
-class GenerationError(Exception): pass
