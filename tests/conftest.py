@@ -52,13 +52,24 @@ def mock_app_data(tmp_path):
          patch("core.backups.APP_DATA_DIR", temp_app_data), \
          patch("core.fs.APP_DATA_DIR", temp_app_data), \
          patch("core.SETTINGS_PATH", temp_app_data / "settings.json"), \
+         patch("core.config.SETTINGS_PATH", temp_app_data / "settings.json"), \
          patch("core.BACKUP_DIR", str(temp_app_data / "backups")), \
+         patch("core.config.BACKUP_DIR", str(temp_app_data / "backups")), \
+         patch("core.backups.BACKUP_DIR", str(temp_app_data / "backups")), \
          patch("application_state.APP_DATA_DIR", temp_app_data), \
          patch("application_state.SESSIONS_DIR", temp_app_data / "sessions"), \
          patch("application_state.PROMPT_HISTORY_PATH", str(temp_app_data / "prompt_history.json")), \
          patch("application_state.CWD_HISTORY_PATH", str(temp_app_data / "cwd_history.json")), \
          patch("application_state.PRESETS_PATH", str(temp_app_data / "selection_presets.json")):
+         
+         # Force update of backup_manager if it's already instantiated
+         import core.backups
+         orig_backup_dir = core.backups.backup_manager.backup_dir
+         core.backups.backup_manager.backup_dir = Path(temp_app_data / "backups")
+
          yield temp_app_data
+
+         core.backups.backup_manager.backup_dir = orig_backup_dir
 
 def stub_to_diff(text: str) -> str:
     """
