@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Callable
 
 from pattern import diff_example
-from .config import config, API_KEY, API_BASE_URL, TOKENS_PER_CHAR_ESTIMATE, AVAILABLE_MODELS
+import sys
+from .config import config, TOKENS_PER_CHAR_ESTIMATE, AVAILABLE_MODELS
 from .fs import is_image_file, file_cache, get_display_path, get_mime_type, encode_image
 
 logger = logging.getLogger(__name__)
@@ -108,7 +109,9 @@ Include a brief human-readable overview of the changes you plan to make at the s
 
 def _create_openai_client():
     from openai import OpenAI
-    return OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
+    # Access module directly to get latest values
+    core_cfg = sys.modules["core.config"]
+    return OpenAI(base_url=core_cfg.API_BASE_URL, api_key=core_cfg.API_KEY)
 
 def generate(
     in_filenames: list[str],

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 from imgui_bundle import imgui, hello_imgui
 
+import sys
 import core
 from core import config, AVAILABLE_MODELS, update_core_settings, is_git_installed, is_git_repo, open_diff_report, get_available_backups
 from application_state import (
@@ -24,9 +25,11 @@ def toggle_theme():
 def open_api_settings():
     """Open the API settings popup."""
     state.show_api_settings_popup = True
+    # Use sys.modules to correctly get core.config module, bypassing core.config object shadowing
+    cfg = sys.modules["core.config"]
     state.api_settings_inputs = {
-        "api_key": core.API_KEY,
-        "base_url": core.API_BASE_URL,
+        "api_key": cfg.API_KEY,
+        "base_url": cfg.API_BASE_URL,
         "models": json.dumps(core.AVAILABLE_MODELS, indent=2),
         "git_branch": config.git_backup_branch
     }
