@@ -203,6 +203,12 @@ class AppState:
     context_search_text: str = ""
     context_flatten_search: bool = False
     last_context_search: str = None
+
+    # Context Drag Selection
+    drag_start_idx: int | None = None
+    drag_end_idx: int | None = None
+    drag_target_state: bool = True
+
     view_tree: dict = field(default_factory=dict)
     view_tree_dirty: bool = True
 
@@ -271,6 +277,7 @@ class AppState:
     # Caches
     backup_list: list = None
     drag_data: Any = None
+    folder_selection_counts: dict = field(default_factory=dict)
     
     # Update UI state
     show_update_popup: bool = False

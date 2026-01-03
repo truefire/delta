@@ -1941,6 +1941,29 @@ def update_app_stats():
              if f not in state.file_exists_cache:
                  state.file_exists_cache[f] = f.exists()
         
+        # Update folder counts
+        cwd = Path.cwd()
+        state.folder_selection_counts.clear()
+        for f_rel in state.selected_files:
+            try:
+                # We need to increment count for every parent folder up to root
+                # Since we store keys as absolute path strings in visible_rows
+                f_abs = (cwd / f_rel).resolve()
+                parent = f_abs.parent
+                while True:
+                    # Don't go above cwd
+                    if not str(parent).startswith(str(cwd)):
+                        break
+                    
+                    k = str(parent)
+                    state.folder_selection_counts[k] = state.folder_selection_counts.get(k, 0) + 1
+                    
+                    if parent == cwd:
+                        break
+                    parent = parent.parent
+            except Exception:
+                pass
+
         # Calculate totals
         checked = [f for f in state.cached_sorted_files 
                    if state.file_checked.get(f, True) and state.file_exists_cache.get(f, True)]
@@ -2788,7 +2811,6 @@ def _search_worker(query_id: int, search_text: str):
         log_message(f"Search thread error: {e}")
 
 def trigger_context_search():
-    state.view_tree_dirty = False
     state.last_context_search = state.context_search_text
 
     if not state.context_search_text:
@@ -2796,8 +2818,10 @@ def trigger_context_search():
         state.cached_whitelist_dirs = None
         state.cached_whitelist_files = None
         state.is_searching = False
+        state.view_tree_dirty = True
         return
 
+    state.view_tree_dirty = False
     state.search_query_id += 1
     state.is_searching = True
     
@@ -2811,6 +2835,13 @@ def _rebuild_context_rows():
     """Rebuild the flattened list of tree rows for the context manager."""
     visible_rows = []
     
+    def count_files_recursive(node):
+        count = len(node.get("_files", []))
+        if "_children" in node:
+            for child in node["_children"].values():
+                count += count_files_recursive(child)
+        return count
+
     search_whitelist_dirs = state.cached_whitelist_dirs
     search_whitelist_files = state.cached_whitelist_files
 
@@ -2839,7 +2870,8 @@ def _rebuild_context_rows():
             "is_open": is_open,
             "depth": depth,
             "scanning": node.get("_scanning", False),
-            "path": full_path
+            "path": full_path,
+            "total_files": count_files_recursive(node)
         })
         
         if is_open:
@@ -2887,7 +2919,9 @@ def render_context_manager():
     opened, state.show_context_manager = imgui.begin("Manage Context", state.show_context_manager)
 
     if opened:
-        if state.view_tree_dirty or state.context_search_text != state.last_context_search:
+        if state.context_search_text != state.last_context_search:
+            trigger_context_search()
+        elif state.view_tree_dirty and state.context_search_text and state.is_scanning:
             trigger_context_search()
 
         imgui.text("Search:")
@@ -3016,16 +3050,95 @@ def render_context_manager():
             
         visible_rows = state.cached_context_rows
 
+        io = imgui.get_io()
+        # Apply Drag Selection
+        if not io.key_shift and state.drag_start_idx is not None:
+            if state.drag_end_idx is None:
+                state.drag_end_idx = state.drag_start_idx
+
+            start = min(state.drag_start_idx, state.drag_end_idx)
+            end = max(state.drag_start_idx, state.drag_end_idx)
+            target = state.drag_target_state
+            
+            # Batch updates to avoid frequent saves/stats updates
+            modified = False
+            
+            for k in range(start, min(end + 1, len(visible_rows))):
+                item = visible_rows[k]
+                if item["type"] == "file":
+                    p = to_relative(item["path"])
+                    if target:
+                        if p not in state.selected_files:
+                            state.selected_files.add(p)
+                            state.file_checked[p] = True
+                            modified = True
+                    else:
+                        if p in state.selected_files:
+                            state.selected_files.discard(p)
+                            modified = True
+                elif item["type"] == "folder":
+                    toggle_folder_selection(item["path"], target) 
+                    modified = True
+            
+            if modified:
+                state.stats_dirty = True
+                save_fileset()
+            
+            state.drag_start_idx = None
+            state.drag_end_idx = None
+
         # Virtualize rendering
         row_height = imgui.get_frame_height()
         clipper = imgui.ListClipper()
         clipper.begin(len(visible_rows), row_height)
         
+        io = imgui.get_io()
+        hover_flags = imgui.HoveredFlags_.allow_when_blocked_by_active_item
+        
         while clipper.step():
             for i in range(clipper.display_start, clipper.display_end):
                 row = visible_rows[i]
                 imgui.table_next_row(0, row_height)
+                
+                # Handle Drag Highlight
+                if state.drag_start_idx is not None and state.drag_end_idx is not None:
+                    low = min(state.drag_start_idx, state.drag_end_idx)
+                    high = max(state.drag_start_idx, state.drag_end_idx)
+                    if low <= i <= high:
+                        col = STYLE.get_u32("diff_add", 100) if state.drag_target_state else STYLE.get_u32("diff_del", 100)
+                        imgui.table_set_bg_color(imgui.TableBgTarget_.row_bg0, col)
+
                 imgui.table_next_column()
+
+                # Pre-calculate selection state (for visuals and drag target logic)
+                is_selected_row = False
+                frel = None
+                folder_prefix = None
+
+                if row["type"] == "folder":
+                    folder_prefix = str(row["path"])
+                    for f in state.selected_files:
+                        if str(f.resolve()).startswith(folder_prefix):
+                            is_selected_row = True
+                            break
+                else:
+                    frel = to_relative(row["path"])
+                    is_selected_row = frel in state.selected_files
+
+                # Row-wide hit detection using invisible selectable
+                imgui.push_id(f"row_sel_{i}")
+                sel_flags = imgui.SelectableFlags_.span_all_columns | imgui.SelectableFlags_.allow_overlap
+                cursor_start = imgui.get_cursor_pos()
+                clicked_row = imgui.selectable("##rowHit", False, flags=sel_flags, size=imgui.ImVec2(0, row_height))[0]
+                
+                if imgui.is_item_hovered(hover_flags) and io.key_shift:
+                    if state.drag_start_idx is None:
+                        state.drag_start_idx = i
+                        state.drag_target_state = not is_selected_row
+                    state.drag_end_idx = i
+                
+                imgui.set_cursor_pos(cursor_start)
+                imgui.pop_id()
                 
                 # Manual indentation
                 indent_w = float(row["depth"]) * 20.0
@@ -3033,18 +3146,81 @@ def render_context_manager():
                     imgui.indent(indent_w)
                 
                 if row["type"] == "folder":
-                    flags = imgui.TreeNodeFlags_.span_all_columns | imgui.TreeNodeFlags_.open_on_arrow
+                    imgui.push_id(row["key"])
+                    
+                    imgui.align_text_to_frame_padding()
+
+                    # Mixed State Calculation
+                    total_in_folder = row.get("total_files", 0)
+                    sel_in_folder = state.folder_selection_counts.get(row["key"], 0)
+                    
+                    is_mixed = (sel_in_folder > 0) and (sel_in_folder < total_in_folder)
+                    display_checked = is_selected_row or is_mixed
+
+                    # We use 'display_checked' for the visual state (False allows standard empty box)
+                    # If Mixed, we pass False to checkbox but draw custom rect, so user clicking it sends True -> Select All
+                    # Actually passing False means click -> True. Passing True means click -> False.
+                    # Behavior: 
+                    #  Mixed -> Click -> Select All (True). So pass False.
+                    #  All -> Click -> None (False). So pass True.
+                    #  None -> Click -> All (True). So pass False.
+                    
+                    cb_val = True if (sel_in_folder == total_in_folder and total_in_folder > 0) else False
+
+                    changed, val = imgui.checkbox("##f_chk", cb_val)
+
+                    # Custom Mixed Indicator
+                    if is_mixed:
+                        # Draw a small box inside the checkbox frame
+                        # We need previous item rect
+                        min_p = imgui.get_item_rect_min()
+                        max_p = imgui.get_item_rect_max()
+                        
+                        sz = max_p.x - min_p.x
+                        pad = sz * 0.25
+                        
+                        dl = imgui.get_window_draw_list()
+                        col = STYLE.get_u32("icon_chk", 150)
+                        dl.add_rect_filled(
+                            imgui.ImVec2(min_p.x + pad, min_p.y + pad),
+                            imgui.ImVec2(max_p.x - pad, max_p.y - pad),
+                            col,
+                            2.0
+                        )
+
+                    if changed:
+                         toggle_folder_selection(row["path"], val)
+                         if val and folder_prefix:
+                             for f in state.file_paths:
+                                 if str(f).startswith(folder_prefix):
+                                     rel = to_relative(f)
+                                     state.file_checked[rel] = True
+                    
+                    # Prevent row click from firing if we just toggled the checkbox
+                    # We can assume if changed=True, we shouldn't expand
+                    if changed:
+                        clicked_row = False
+
+                    imgui.same_line()
+                    
+                    flags = 0
                     
                     if search_whitelist_dirs is not None:
                         imgui.set_next_item_open(True, imgui.Cond_.always)
                     else:
                         imgui.set_next_item_open(row["is_open"], imgui.Cond_.always)
 
-                    imgui.push_id(row["key"])
                     is_node_open = imgui.tree_node_ex(f"{row['name']}/", flags)
                     
-                    if search_whitelist_dirs is None and imgui.is_item_toggled_open():
-                         state.folder_states[row["key"]] = not row["is_open"]
+                    if search_whitelist_dirs is None and is_node_open != row["is_open"]:
+                         state.folder_states[row["key"]] = is_node_open
+                         state.view_tree_dirty = True
+
+                    # Handle Row Click expansion for folders
+                    if clicked_row and not io.key_shift and not io.key_ctrl:
+                         # Use toggle logic on state directly
+                         new_state = not row["is_open"]
+                         state.folder_states[row["key"]] = new_state
                          state.view_tree_dirty = True
                     
                     if is_node_open:
@@ -3061,17 +3237,23 @@ def render_context_manager():
                     fpath = row["path"]
                     msg = row["name"]
                     
-                    frel = to_relative(fpath)
-                    sel = frel in state.selected_files
-                    
                     imgui.push_id(str(fpath))
-                    if imgui.checkbox("", sel)[0]:
-                        toggle_file_selection(frel, not sel)
-                        if not sel: state.file_checked[frel] = True
-                    imgui.pop_id()
+                    
+                    changed, val = imgui.checkbox("", is_selected_row)
+                    if changed:
+                        toggle_file_selection(frel, not is_selected_row)
+                        if not is_selected_row: state.file_checked[frel] = True
+                        clicked_row = False # Prevent double toggle
                     
                     imgui.same_line()
                     imgui.text(msg)
+                    
+                    if clicked_row and not io.key_shift and not io.key_ctrl:
+                        toggle_file_selection(frel, not is_selected_row)
+                        if not is_selected_row: state.file_checked[frel] = True
+
+                    imgui.pop_id()
+                    
                     imgui.table_next_column()
 
                 if indent_w > 0:
@@ -3079,9 +3261,9 @@ def render_context_manager():
 
         imgui.end_table()
 
-        imgui.end_child()
+    imgui.end_child()
 
-        imgui.columns(1)
+    imgui.columns(1)
 
     imgui.end()
 
