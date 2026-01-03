@@ -68,7 +68,8 @@ def handle_queue_event(event: dict):
         if session.current_bubble:
             session.current_bubble.flush()
 
-    elif event_type == "log_entry":        state.logs.append({
+    elif event_type == "log_entry":
+        state.logs.append({
             "level": event.get("level"),
             "msg": event.get("message"),
             "time": event.get("timestamp")
