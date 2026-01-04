@@ -51,6 +51,127 @@ def render_chat_panel():
     tab_size = 28
     tab_spacing = 4
 
+    style = imgui.get_style()
+    window_padding = style.window_padding.x
+    window_width = imgui.get_window_width()
+
+    # Calculate right-side controls widths first to determine tab area
+    qs_btn_text = "Quicksave Tabs"
+    qs_w = imgui.calc_text_size(qs_btn_text).x + style.frame_padding.x * 2.0
+
+    sys_btn_text = "Hide System" if state.show_system_prompt else "Show System"
+    sys_w = imgui.calc_text_size(sys_btn_text).x + style.frame_padding.x * 2.0
+    
+    cancel_btn_text = "Cancel All"
+    cancel_w = 0
+    has_active = any(s.is_generating for s in state.sessions.values())
+    if state.impl_queue or has_active:
+        cancel_w = imgui.calc_text_size(cancel_btn_text).x + style.frame_padding.x * 2.0
+        
+    total_right_w = qs_w + style.item_spacing.x + sys_w
+    if cancel_w > 0:
+        total_right_w += cancel_w + style.item_spacing.x
+
+    q_timer_text = ""
+    if state.queue_start_time > 0.0:
+        dur = time.time() - state.queue_start_time
+        if dur > 0:
+            q_timer_text = f"{dur:.1f}s"
+
+    if q_timer_text:
+        tw = imgui.calc_text_size(q_timer_text).x + style.frame_padding.x * 2
+        total_right_w += tw + style.item_spacing.x
+
+    total_right_w += 20 # Padding
+
+    avail_w_for_tabs = window_width - total_right_w - window_padding
+    if avail_w_for_tabs < 100: avail_w_for_tabs = 100
+
+    # Custom Scrollbar Logic (Top of tabs)
+    sb_height = style.scrollbar_size * 0.5
+    
+    if not hasattr(render_chat_panel, "scroll_state"):
+        render_chat_panel.scroll_state = {"x": 0.0, "max": 0.0, "target": None, "last_active": -1, "destination": None}
+    s_state = render_chat_panel.scroll_state
+
+    # Ensure destination key exists if state persisted across reload
+    if "destination" not in s_state: s_state["destination"] = None
+
+    force_scroll_active = False
+    if s_state.get("last_active") != state.active_session_id:
+        force_scroll_active = True
+        s_state["last_active"] = state.active_session_id
+
+    # Draw Scrollbar if needed
+    if s_state["max"] > 0:
+        # Handle manual scrollbar target (snap)
+        if s_state["target"] is not None:
+            s_state["destination"] = s_state["target"]
+            imgui.set_next_window_scroll(imgui.ImVec2(s_state["target"], 0))
+            s_state["target"] = None
+        # Handle smooth animation
+        elif s_state["destination"] is not None:
+            curr = s_state["x"]
+            dest = s_state["destination"]
+            
+            # Clamp destination to max to prevent stuck scrolling loop if layout changed
+            eff_dest = min(dest, s_state["max"])
+            
+            if abs(curr - eff_dest) < 1.0:
+                imgui.set_next_window_scroll(imgui.ImVec2(eff_dest, 0))
+                # Only clear destination if we reached the true target
+                if abs(eff_dest - dest) < 1.0:
+                    s_state["destination"] = None
+            else:
+                # Lerp
+                new_x = curr + (eff_dest - curr) * 0.2
+                if abs(new_x - eff_dest) < 1.0: new_x = eff_dest
+                imgui.set_next_window_scroll(imgui.ImVec2(new_x, 0))
+
+        p_min = imgui.get_cursor_screen_pos()
+        imgui.invisible_button("##top_scrollbar", imgui.ImVec2(avail_w_for_tabs, sb_height))
+        
+        dl = imgui.get_window_draw_list()
+        p_max = imgui.ImVec2(p_min.x + avail_w_for_tabs, p_min.y + sb_height)
+        
+        # Track
+        dl.add_rect_filled(p_min, p_max, STYLE.get_u32("bg", 0.3), sb_height * 0.5)
+
+        # Thumb
+        window_w = avail_w_for_tabs
+        content_w = window_w + s_state["max"]
+        thumb_ratio = window_w / content_w
+        thumb_size = max(20.0, window_w * thumb_ratio)
+        
+        scroll_ratio = s_state["x"] / s_state["max"]
+        track_len = window_w - thumb_size
+        thumb_start = p_min.x + (track_len * scroll_ratio)
+        
+        thumb_col_k = "scrollbar"
+        if imgui.is_item_active():
+            thumb_col_k = "sel_bg"
+            delta = imgui.get_io().mouse_delta.x
+            if delta != 0 and track_len > 0:
+                s_state["target"] = s_state["x"] + (delta * (s_state["max"] / track_len))
+                s_state["target"] = max(0.0, min(s_state["target"], s_state["max"]))
+        elif imgui.is_item_hovered():
+            thumb_col_k = "fg_dim"
+
+        dl.add_rect_filled(
+            imgui.ImVec2(thumb_start, p_min.y),
+            imgui.ImVec2(thumb_start + thumb_size, p_max.y),
+            STYLE.get_u32(thumb_col_k),
+            sb_height * 0.5
+        )
+    else:
+        render_chat_panel.scroll_state["target"] = None
+
+    imgui.begin_child("TabRegion", imgui.ImVec2(avail_w_for_tabs, tab_size), child_flags=imgui.ChildFlags_.none, window_flags=imgui.WindowFlags_.horizontal_scrollbar | imgui.WindowFlags_.no_scrollbar)
+    
+    # Update state from child properties
+    s_state["x"] = imgui.get_scroll_x()
+    s_state["max"] = imgui.get_scroll_max_x()
+
     draw_list = imgui.get_window_draw_list()
 
     group_map = {}
@@ -128,6 +249,27 @@ def render_chat_panel():
         
         if imgui.button(f"##{session_id}", imgui.ImVec2(tab_size, tab_size)):
             state.active_session_id = session_id
+
+        if is_selected and force_scroll_active:
+            # Calculate target scroll to center this item
+            item_min = imgui.get_item_rect_min()
+            item_max = imgui.get_item_rect_max()
+            
+            # Window info (TabRegion)
+            win_min = imgui.get_window_pos()
+            win_w = imgui.get_window_width()
+            
+            c_item = (item_min.x + item_max.x) * 0.5
+            c_win = win_min.x + (win_w * 0.5)
+            
+            # Offset needed to center item
+            offset = c_item - c_win
+            
+            # Current scroll is s_state["x"]
+            calc_dest = s_state["x"] + offset
+            calc_dest = max(0.0, calc_dest)
+            
+            s_state["destination"] = calc_dest
 
         if imgui.is_item_hovered() and imgui.is_mouse_clicked(imgui.MouseButton_.middle):
             if session.waiting_for_approval:
@@ -208,47 +350,42 @@ def render_chat_panel():
 
     imgui.pop_style_color(3)
 
-    has_active = any(s.is_generating for s in state.sessions.values())
-
-    # Buttons (System Prompt Toggle + Cancel All)
-    style = imgui.get_style()
-    window_padding = style.window_padding.x
-    window_width = imgui.get_window_width()
-    
-    qs_btn_text = "Quicksave Tabs"
-    qs_w = imgui.calc_text_size(qs_btn_text).x + style.frame_padding.x * 2.0
-
-    sys_btn_text = "Hide System" if state.show_system_prompt else "Show System"
-    sys_w = imgui.calc_text_size(sys_btn_text).x + style.frame_padding.x * 2.0
-    
-    cancel_btn_text = "Cancel All"
-    cancel_w = 0
-    if state.impl_queue or has_active:
-        cancel_w = imgui.calc_text_size(cancel_btn_text).x + style.frame_padding.x * 2.0
+    # Draw gradients for scroll indicating
+    if s_state["max"] > 0:
+        p_min = imgui.get_window_pos()
+        p_max = imgui.ImVec2(p_min.x + imgui.get_window_width(), p_min.y + imgui.get_window_height())
         
-    total_w = qs_w + style.item_spacing.x + sys_w
-    if cancel_w > 0:
-        total_w += cancel_w + style.item_spacing.x
+        # Use window background for fade color
+        c = imgui.get_style_color_vec4(imgui.Col_.window_bg)
+        col_opa = imgui.get_color_u32(c)
+        col_tra = imgui.get_color_u32(imgui.ImVec4(c.x, c.y, c.z, 0.0))
+        
+        grad_w = 30.0
+        dl = imgui.get_window_draw_list()
+        
+        if s_state["x"] > 0:
+            dl.add_rect_filled_multi_color(
+                p_min,
+                imgui.ImVec2(p_min.x + grad_w, p_max.y),
+                col_opa, col_tra, col_tra, col_opa
+            )
+            
+        if s_state["x"] < s_state["max"]:
+            dl.add_rect_filled_multi_color(
+                imgui.ImVec2(p_max.x - grad_w, p_min.y),
+                p_max,
+                col_tra, col_opa, col_opa, col_tra
+            )
 
-    # Queue Timer calculation
-    q_timer_text = ""
+    imgui.end_child()
+
+    # Draw Right-Side Controls
+    imgui.same_line()
     
-    if state.queue_start_time > 0.0:
-        dur = time.time() - state.queue_start_time
-        if dur > 0:
-            q_timer_text = f"{dur:.1f}s"
-
-    if q_timer_text:
-        tw = imgui.calc_text_size(q_timer_text).x + style.frame_padding.x * 2
-        total_w += tw + style.item_spacing.x
-
-    cursor_x = imgui.get_cursor_pos_x()
-    target_x = window_width - total_w - window_padding
-
-    if target_x > cursor_x:
-        imgui.same_line(target_x)
-    else:
-        imgui.same_line()
+    # Adjust cursor to ensure right-alignment
+    target_x = window_width - total_right_w + 20 - window_padding
+    if imgui.get_cursor_pos_x() < target_x:
+        imgui.set_cursor_pos_x(target_x)
 
     if imgui.button(qs_btn_text):
         quicksave_session()
