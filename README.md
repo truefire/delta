@@ -13,16 +13,14 @@ See [this page](ARCHITECTURE.md) for details on implementation.
 # Features
 
 - **Context Control**: Precise control over which files are included in the context.
-- **Robust Patching**: Uses a fuzzy-search-and-replace algorithm that applies changes even if the LLM doesn't get the context exactly right.
-- **Automatic Backups**: Automatic backups (File or Git-based) with one-click rollback any time the LLM changes something.
-- **Validation Loop**:  Automatically run tests or linters after changes, feeding errors back to the LLM for self-correction.
+- **Robust Patching**: Uses a fuzzy-search-and-replace algorithm to apply changes in an LLM-aware way.
+- **Automatic Backups**: Automatic backups (File or Git-based) with one-click rollback.
+- **Validation Loop**:  Automatically run tests or linters after changes, correcting or reporting issues.
 - **Review Tools**: Visual diff reports to verify changes before they are committed.
-- **CLI Support**: CLI interface exposes functionality for integration into terminal environments or other tools.
+- **CLI Support**: CLI interface exposes functionality for integration with terminal environments or other tools.
 - **Tabbed Sessions**: Seamless tabbed interface for managing multiple tasks or sessions.
 - **History**: Save and resume multi-turn conversation sessions.
-- **Focus Mode**: (Optionally) flashes your screen when a task completes. No more lost time between context switching.
-- **Planning Mode**: Break down complex features into a sequence of smaller, manageable implementation steps.
-- **Smart File Discovery**: 'Filedig' can discover relevant files based on your prompt, if you really don't want to manually select them.
+- **Light Agentic Tools**: Optional agentic file search and task decomposition if you're feeling extra lazy.
 
 
 # Installation
