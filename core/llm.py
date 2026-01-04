@@ -3,7 +3,7 @@ import logging
 import time
 import threading
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Any
 
 from pattern import diff_example, rewrite_example
 import sys
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 class CancelledError(Exception): pass
 class GenerationError(Exception): pass
 
-OutputFunc = Callable[[str], None]
+OutputFunc = Callable[..., None]
 
 def _calc_tiered_cost(token_count: int, pricing: dict, key_prefix: str) -> float:
     base_cost = (token_count / 1_000_000) * pricing.get(key_prefix, 0)
@@ -146,30 +146,32 @@ def generate(
         egress_msg += f"\n\n(Plus {len(image_files)} image file(s) attached)"
     egress_msg += f"\n\nRequest:\n{prompt}"
 
-    api_user_content = egress_msg
+    api_user_content: str | list[dict[str, Any]] = egress_msg
     if image_files:
         api_user_content = [{"type": "text", "text": egress_msg}]
         for img_path in image_files:
             try:
-                api_user_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{get_mime_type(img_path)};base64,{encode_image(img_path)}"}
-                })
+                if isinstance(api_user_content, list):
+                    api_user_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{get_mime_type(img_path)};base64,{encode_image(img_path)}"}
+                    })
             except Exception as e:
                 logger.error(f"Failed to encode image {img_path}: {e}")
 
-    history_user_content = prompt
+    history_user_content: str | list[dict[str, Any]] = prompt
     if image_files:
         history_user_content = [{"type": "text", "text": prompt}]
         for img_path in image_files:
             try:
-                history_user_content.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:{get_mime_type(img_path)};base64,{encode_image(img_path)}"}
-                })
+                if isinstance(history_user_content, list):
+                    history_user_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": f"data:{get_mime_type(img_path)};base64,{encode_image(img_path)}"}
+                    })
             except Exception: pass
 
-    base_messages = [{"role": "system", "content": system_message}]
+    base_messages: list[dict[str, Any]] = [{"role": "system", "content": system_message}]
     if conversation_history:
         base_messages.extend(conversation_history)
     base_messages.append({"role": "user", "content": api_user_content})

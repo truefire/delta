@@ -41,10 +41,10 @@ class ChatSession:
     anchors: list = field(default_factory=list)
 
     last_prompt: str = ""
-    backup_id: str = None
+    backup_id: str | None = None
     current_response_chars: int = 0
     request_start_time: float = 0.0
-    execution_start_time: float = None
+    execution_start_time: float | None = None
     request_end_time: float = 0.0
 
     is_generating: bool = False
@@ -210,7 +210,7 @@ class AppState:
     """Global application state."""
     # Sessions
     sessions: dict = field(default_factory=dict)  # id -> ChatSession
-    active_session_id: int = None
+    active_session_id: int | None = None
     next_session_id: int = 1
     next_group_id: int = 1
 
@@ -230,7 +230,7 @@ class AppState:
     gui_queue: queue.Queue = field(default_factory=queue.Queue)
     impl_queue: list = field(default_factory=list)
     impl_history: list = field(default_factory=list)
-    current_impl_sid: int = None
+    current_impl_sid: int | None = None
     queue_blocked: bool = False
 
     # UI state
@@ -276,7 +276,7 @@ class AppState:
     show_context_manager: bool = False
     context_search_text: str = ""
     context_flatten_search: bool = False
-    last_context_search: str = None
+    last_context_search: str | None = None
 
     # Context Drag Selection
     drag_start_idx: int | None = None
@@ -289,10 +289,10 @@ class AppState:
     search_query_id: int = 0
     is_searching: bool = False
 
-    cached_whitelist_dirs: set = None
-    cached_whitelist_files: set = None
-    cached_flat_filtered_files: list = None
-    cached_context_rows: list = None
+    cached_whitelist_dirs: set[Any] | None = None
+    cached_whitelist_files: set[Any] | None = None
+    cached_flat_filtered_files: list[Any] | None = None
+    cached_context_rows: list[Any] | None = None
 
     # Performance Caching
     stats_dirty: bool = True
@@ -349,7 +349,7 @@ class AppState:
     pending_exit_action: str | None = None  # "exit" or "restart"
 
     # Caches
-    backup_list: list = None
+    backup_list: list | None = None
     drag_data: Any = None
     folder_selection_counts: dict = field(default_factory=dict)
     
@@ -702,7 +702,7 @@ def get_saves_list() -> list[dict]:
             })
         except Exception: pass
         
-    saves.sort(key=lambda x: x["mtime"], reverse=True)
+    saves.sort(key=lambda x: str(x["mtime"]), reverse=True)
     return saves
 
 def load_prompt_history():
@@ -838,7 +838,7 @@ def save_presets():
 
 def build_file_tree(paths: list[Path], root: Path) -> dict:
     """Build a file tree structure from a list of paths."""
-    tree = {}
+    tree: dict[str, Any] = {}
     for file_path in paths:
         try:
             rel = file_path.relative_to(root)
@@ -862,7 +862,7 @@ def build_file_tree(paths: list[Path], root: Path) -> dict:
         target_node["_files"].append((parts[-1], file_path))
     return tree
 
-scan_queue = queue.PriorityQueue()
+scan_queue: queue.PriorityQueue = queue.PriorityQueue()
 tree_lock = threading.Lock()
 _scan_thread_started = False
 
@@ -898,7 +898,7 @@ def _scan_folder_impl(folder_path: Path):
             if folder_path == cwd:
                 parts = []
             else:
-                parts = folder_path.relative_to(cwd).parts
+                parts = list(folder_path.relative_to(cwd).parts)
         except ValueError:
             return # Path outside CWD
 

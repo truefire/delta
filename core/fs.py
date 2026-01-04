@@ -8,7 +8,7 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from .config import APP_DATA_DIR, load_json_file, save_json_file, DEFAULT_HIDDEN, estimate_tokens, _TOOL_DIR
 
@@ -205,7 +205,7 @@ def is_path_within_cwd(file_path: Path, cwd: Path) -> bool:
     except ValueError:
         return False
 
-def _validate_paths(filenames: list[str | Path]) -> tuple[list[str], list[str]]:
+def _validate_paths(filenames: Sequence[str | Path]) -> tuple[list[str], list[str]]:
     try:
         cwd = Path.cwd().resolve(strict=True)
     except FileNotFoundError:
@@ -227,7 +227,7 @@ def _validate_paths(filenames: list[str | Path]) -> tuple[list[str], list[str]]:
             errors.append(f"Error checking '{f}': {e}")
     return validated, errors
 
-def validate_files(filenames: list[str | Path]) -> tuple[list[str], str | None]:
+def validate_files(filenames: Sequence[str | Path]) -> tuple[list[str], str | None]:
     validated, errors = _validate_paths(filenames)
     return validated, "\n".join(errors) if errors else None
 

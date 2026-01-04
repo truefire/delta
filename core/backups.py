@@ -436,11 +436,11 @@ def get_available_backups() -> list[dict]:
         history = git.get_history()
         for item in history:
             item["sort_key"] = item["timestamp"]
-            files = git.get_commit_files(item["session_id"])
-            item["files"] = files
+            git_files = git.get_commit_files(item["session_id"])
+            item["files"] = git_files
             all_backups.append(item)
     
-    all_backups.sort(key=lambda x: x.get("sort_key", ""), reverse=True)
+    all_backups.sort(key=lambda x: str(x.get("sort_key", "")), reverse=True)
     return all_backups
 
 def restore_git_backup(commit_hash: str) -> dict[str, str]:

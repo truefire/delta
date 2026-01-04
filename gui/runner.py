@@ -32,21 +32,21 @@ def create_docking_layout() -> tuple:
     s1 = hello_imgui.DockingSplit()
     s1.initial_dock = "MainDockSpace"
     s1.new_dock = "SidebarSpace"
-    s1.direction = imgui.Dir_.right
+    s1.direction = imgui.Dir.right
     s1.ratio = 0.3
     splits.append(s1)
 
     s2 = hello_imgui.DockingSplit()
     s2.initial_dock = "MainDockSpace"
     s2.new_dock = "LogsSpace"
-    s2.direction = imgui.Dir_.down
+    s2.direction = imgui.Dir.down
     s2.ratio = 0.2
     splits.append(s2)
 
     s3 = hello_imgui.DockingSplit()
     s3.initial_dock = "SidebarSpace"
     s3.new_dock = "FilesSpace"
-    s3.direction = imgui.Dir_.down
+    s3.direction = imgui.Dir.down
     s3.ratio = 0.50
     splits.append(s3)
 

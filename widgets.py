@@ -5,14 +5,14 @@ import time
 import re
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Callable, Any
 
 from imgui_bundle import imgui, imgui_md
 
 # Optional Dependencies
 try:
-    import versus
-    from versus.interfaces import Myers
+    import versus  # type: ignore
+    from versus.interfaces import Myers  # type: ignore
     _versus_available = True
 except ImportError:
     _versus_available = False
@@ -115,7 +115,7 @@ class DiffViewer:
         self.block_state = block_state
         self.filename_hint = filename_hint
         self.language_hint = language_hint
-        self._cached_height = None
+        self._cached_height: float | None = None
         self._parse_content()
 
     def _parse_content(self):
@@ -233,7 +233,8 @@ class DiffViewer:
         hunks = []
         diffs = Myers.diff(old_lines, new_lines)
         current_op = None
-        old_buf, new_buf = [], []
+        old_buf: list[str] = []
+        new_buf: list[str] = []
 
         for op, line in diffs:
             if op == 'equal':
@@ -557,14 +558,14 @@ class ChatBubble:
     def __init__(self, role: str, message_id: int = 0):
         self.message = ChatMessage(role=role)
         self.message_id = message_id
-        self.pre_viewers = []
+        self.pre_viewers: list[Any] = []
         self._line_buffer = ""
         self._in_code_block = False
-        self._current_block_content = []
+        self._current_block_content: list[str] = []
         self._current_block_counter = 0
         
         self._in_plan_block = False
-        self._current_plan_content = []
+        self._current_plan_content: list[str] = []
         self._current_plan_counter = 0
         self._show_raw = False
         self._filename_candidate = None
@@ -871,7 +872,7 @@ class ChatBubble:
 
     def _parse_content_segments(self) -> list:
         """Parse content into renderable segments using regex."""
-        segments = []
+        segments: list[dict[str, Any]] = []
         text = self.message.content
         pos = 0
         
@@ -984,7 +985,7 @@ def render_file_tree(
     folder_states: dict,
     on_file_toggle: Callable,
     on_folder_toggle: Callable,
-    root_path: Path = None
+    root_path: Path | None = None
 ) -> None:
     """Render a file tree with checkboxes.
 
@@ -1000,7 +1001,7 @@ def render_file_tree(
         root_path = Path.cwd()
 
     # Build tree structure
-    tree = {}
+    tree: dict[str, Any] = {}
     for file_path in files:
         try:
             rel = file_path.relative_to(root_path)
@@ -1066,9 +1067,9 @@ def render_file_tree(
         render_node(name, node, root_path)
 
 
-def draw_status_icon(draw_list, cx: float, cy: float, status: str, badge: str = None):
+def draw_status_icon(draw_list, cx: float, cy: float, status: str, badge: str | None = None):
     """Draw a colored status icon at the given center position."""
-    colors = {
+    colors: dict[str, int] = {
         "running": imgui.get_color_u32(imgui.ImVec4(0.13, 0.59, 0.95, 1.0)),      
         "running_ask": imgui.get_color_u32(imgui.ImVec4(0.61, 0.15, 0.69, 1.0)),  
         "running_plan": imgui.get_color_u32(imgui.ImVec4(0.00, 0.73, 0.83, 1.0)), 
