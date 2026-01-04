@@ -303,15 +303,6 @@ def render_settings_panel():
     if changed:
         sync_config_from_settings()
 
-    imgui.same_line()
-    imgui.text("Dig Turns:")
-    imgui.same_line()
-    imgui.set_next_item_width(50)
-    changed, state.filedig_max_turns = imgui.input_text("##fdturns", state.filedig_max_turns)
-    render_tooltip("Max turns for Filedig agent.")
-    if changed:
-        sync_config_from_settings()
-
     imgui.text("Shard @:")
     imgui.same_line(70)
     imgui.set_next_item_width(60)
@@ -412,6 +403,20 @@ def render_settings_panel():
     render_tooltip("Maximum number of fuzzy-matching lines allowed in a diff.")
 
     if changed1 or changed2:
+        sync_config_from_settings()
+
+    imgui.text("Dig Turns:")
+    imgui.same_line()
+    imgui.set_next_item_width(50)
+    changed, state.filedig_max_turns = imgui.input_text("##fdturns", state.filedig_max_turns)
+    render_tooltip("Max turns for Filedig agent.")
+    if changed:
+        sync_config_from_settings()
+
+    imgui.same_line()
+    changed, state.allow_rewrite = imgui.checkbox("Allow REWRITE", state.allow_rewrite)
+    render_tooltip("Expose the REWRITE command to the LLM, allowing it to fully replace or delete files.")
+    if changed:
         sync_config_from_settings()
 
     imgui.separator()

@@ -6,7 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Callable, Any
 
-from pattern import code_block_pattern, search_block_pattern, plan_block_pattern
+from pattern import code_block_pattern, search_block_pattern, plan_block_pattern, rewrite_block_pattern
 from .config import config
 from .fs import is_image_file
 from .backups import backup_manager, GitShadowHandler
@@ -149,7 +149,17 @@ def parse_diffs(diff_string: str) -> list[dict]:
                 "filename": filename,
                 "original": original if original and original.strip() else "",
                 "new": hunk_match.group(2),
+                "type": "search"
             })
+        
+        if config.allow_rewrite:
+            for hunk_match in rewrite_block_pattern.finditer(diff_content):
+                parsed_diffs.append({
+                    "filename": filename,
+                    "original": "",
+                    "new": hunk_match.group(1),
+                    "type": "rewrite"
+                })
 
     return parsed_diffs
 
@@ -261,9 +271,21 @@ def _apply_single_diff(diff_info: dict, file_states: dict, simulated_states: dic
     filename = diff_info["filename"]
     original = diff_info["original"]
     new = diff_info["new"]
+    diff_type = diff_info.get("type", "search")
 
     current_content = simulated_states[filename]
     is_existing_file, _ = file_states[filename]
+    
+    if diff_type == "rewrite":
+        if not new:
+             simulated_states[filename] = None # Marker for deletion
+        else:
+             simulated_states[filename] = new
+        diff_counts[filename] += 1
+        return
+
+    if current_content is None:
+        raise ValueError(f"{filename}: Cannot apply search/replace after a delete rewrite.")
 
     if not is_existing_file and diff_counts[filename] == 0:
         if original == "":
@@ -375,14 +397,28 @@ def apply_diffs(diff_string: str, create_backup: bool = True, ambiguous_mode: st
                 else:
                     backup_manager.register_created_file(p)
             
-            if not is_existing_file:
-                p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(final_content, encoding="utf-8")
-            
-            if not is_existing_file:
-                applied[filename] = "Created"
+            if final_content is not None:
+                if config.backup_enabled and not git_backup_active:
+                    if is_existing_file:
+                        backup_manager.backup_file(p)
+                    else:
+                        backup_manager.register_created_file(p)
+
+                if not is_existing_file:
+                    p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_text(final_content, encoding="utf-8")
+                
+                if not is_existing_file:
+                    applied[filename] = "Created"
+                else:
+                    applied[filename] = f"{diff_counts[filename]} diff(s)"
             else:
-                applied[filename] = f"{diff_counts[filename]} diff(s)"
+                if config.backup_enabled and not git_backup_active and is_existing_file:
+                    backup_manager.backup_file(p)
+                    
+                if p.exists():
+                    p.unlink()
+                    applied[filename] = "Deleted"
 
         except Exception as e:
             raise IOError(f"Error writing file '{p}' during application phase: {e}\n\nRaw response: {diff_string}") from e

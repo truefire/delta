@@ -158,6 +158,12 @@ class DeltaToolConfig:
         self.max_shards = _settings.get("max_shards", 5)
         self.sharding_ratio = _settings.get("sharding_ratio", 0.9)
         self.extra_system_prompt = _settings.get("extra_system_prompt", "")
+        self.allow_rewrite = _settings.get("allow_rewrite", False)
+
+    def set_allow_rewrite(self, enabled: bool) -> None:
+        self.allow_rewrite = enabled
+        _settings["allow_rewrite"] = enabled
+        _save_settings(_settings)
 
     def set_extra_system_prompt(self, prompt: str) -> None:
         self.extra_system_prompt = prompt

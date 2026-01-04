@@ -17,6 +17,13 @@ search_block_pattern = re.compile(
     re.MULTILINE | re.DOTALL
 )
 
+rewrite_block_pattern = re.compile(
+    r"^\s*<<<<<<< REWRITE\s*\n"
+    r"(.*?)(?:\r?\n)?"
+    r"^\s*>>>>>>> REPLACE",
+    re.MULTILINE | re.DOTALL
+)
+
 plan_block_pattern = re.compile(
     r"^<<<<<<< PLAN\n"
     r"Title:\s*(.*?)\n"
@@ -30,6 +37,13 @@ dir/filename.ext
 <<<<<<< SEARCH
 exact original text
 =======
+new text
+>>>>>>> REPLACE
+```"""
+
+rewrite_example = """```
+dir/filename.ext
+<<<<<<< REWRITE
 new text
 >>>>>>> REPLACE
 ```"""

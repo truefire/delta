@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-from pattern import diff_example
+from pattern import diff_example, rewrite_example
 import sys
 from .config import config, TOKENS_PER_CHAR_ESTIMATE, AVAILABLE_MODELS
 from .fs import is_image_file, file_cache, get_display_path, get_mime_type, encode_image
@@ -103,6 +103,9 @@ The original text must match exactly with no differences -- This means no annota
 Ensure you surround your diff with triple backticks on their own lines.
 Include a brief human-readable overview of the changes you plan to make at the start, AND a recap of the changes you made at the end.
 """
+    if config.allow_rewrite:
+        msg += f"\nTo replace a file completely (or delete it), you may use:\n\n{rewrite_example}\n"
+
     if config.extra_system_prompt:
         msg += f"\n\n=== Custom Instructions ===\n{config.extra_system_prompt}"
     return msg

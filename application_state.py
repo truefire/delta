@@ -203,6 +203,7 @@ class AppState:
     persist_session: bool = config.persist_session
     verify_changes: bool = config.verify_changes
     require_approval: bool = config.require_approval
+    allow_rewrite: bool = config.allow_rewrite
     ambiguous_mode_idx: int = 0
     validation_failure_behavior_idx: int = 0
 
@@ -937,6 +938,7 @@ def sync_settings_from_config():
     state.auto_review = config.auto_review
     state.verify_changes = config.verify_changes
     state.require_approval = config.require_approval
+    state.allow_rewrite = config.allow_rewrite
     state.validate_at_start = config.validate_at_start
     state.add_new_files = config.add_new_files
     state.persist_session = config.persist_session
@@ -976,6 +978,7 @@ def sync_config_from_settings():
     config.set_auto_review(state.auto_review)
     config.set_verify_changes(state.verify_changes)
     config.set_require_approval(state.require_approval)
+    config.set_allow_rewrite(state.allow_rewrite)
     config.set_validate_at_start(state.validate_at_start)
     config.set_add_new_files(state.add_new_files)
     config.set_persist_session(state.persist_session)

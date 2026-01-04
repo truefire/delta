@@ -46,5 +46,6 @@
   "diff_fuzzy_lines_threshold": 0.95,
   "diff_fuzzy_max_bad_lines": 1,
   "focus_trigger": "task",
-  "validation_failure_behavior": "correct"
+  "validation_failure_behavior": "correct",
+  "allow_rewrite": false
 }
