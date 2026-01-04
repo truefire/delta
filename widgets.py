@@ -349,11 +349,8 @@ class DiffViewer:
 
         # Content area (if expanded)
         if not self.state.collapsed:
-            avail = imgui.get_content_region_avail()
-            content_height = min(400, max(100, self._calc_content_height()))
-
             imgui.push_style_color(imgui.Col_.child_bg, STYLE.get_imvec4("diff_txt"))
-            imgui.begin_child("diff_content", imgui.ImVec2(0, content_height), child_flags=imgui.ChildFlags_.borders)
+            imgui.begin_child("diff_content", imgui.ImVec2(0, 0), child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y, window_flags=imgui.WindowFlags_.no_scrollbar | imgui.WindowFlags_.no_scroll_with_mouse)
 
             if self.state.is_creation:
                 # Single column for new files
@@ -525,7 +522,7 @@ class PlanViewer:
         if not self.state.collapsed:
             imgui.push_style_color(imgui.Col_.child_bg, STYLE.get_imvec4("bg_cont"))
             
-            imgui.begin_child("plan_content", imgui.ImVec2(0, 0), child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y)
+            imgui.begin_child("plan_content", imgui.ImVec2(0, 0), child_flags=imgui.ChildFlags_.borders | imgui.ChildFlags_.auto_resize_y, window_flags=imgui.WindowFlags_.no_scrollbar | imgui.WindowFlags_.no_scroll_with_mouse)
             
             imgui.begin_group()
             imgui.push_text_wrap_pos(0.0)
@@ -621,7 +618,7 @@ class ChatBubble:
             
             if is_open:
                 imgui.push_style_color(imgui.Col_.child_bg, STYLE.get_imvec4("code_bg"))
-                imgui.begin_child(f"tool_{self.message_id}", imgui.ImVec2(0, 0), child_flags=imgui.ChildFlags_.auto_resize_y | imgui.ChildFlags_.borders)
+                imgui.begin_child(f"tool_{self.message_id}", imgui.ImVec2(0, 0), child_flags=imgui.ChildFlags_.auto_resize_y | imgui.ChildFlags_.borders, window_flags=imgui.WindowFlags_.no_scrollbar | imgui.WindowFlags_.no_scroll_with_mouse)
                 imgui.push_style_color(imgui.Col_.text, STYLE.get_imvec4("fg_dim"))
                 
                 if raw_txt:
@@ -858,7 +855,7 @@ class ChatBubble:
                 # Render code block without diff
                 imgui.push_style_color(imgui.Col_.child_bg, STYLE.get_imvec4("code_bg"))
                 imgui.begin_child(f"code_{segment['id']}", imgui.ImVec2(0, 0),
-                                 child_flags=imgui.ChildFlags_.auto_resize_y)
+                                 child_flags=imgui.ChildFlags_.auto_resize_y, window_flags=imgui.WindowFlags_.no_scrollbar | imgui.WindowFlags_.no_scroll_with_mouse)
                 imgui.push_style_color(imgui.Col_.text, STYLE.get_imvec4("code_fg"))
                 imgui.text(segment["content"])
                 imgui.pop_style_color()
