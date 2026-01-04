@@ -98,6 +98,9 @@ def render_api_settings_popup():
                 
                 imgui.close_current_popup()
                 log_message("API settings saved.")
+
+                if not config.has_seen_tutorial:
+                    state.show_tutorial_offer = True
                 
             except Exception as e:
                 state.api_settings_error = f"Error: {e}"

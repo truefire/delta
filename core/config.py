@@ -159,6 +159,12 @@ class DeltaToolConfig:
         self.sharding_ratio = _settings.get("sharding_ratio", 0.9)
         self.extra_system_prompt = _settings.get("extra_system_prompt", "")
         self.allow_rewrite = _settings.get("allow_rewrite", False)
+        self.has_seen_tutorial = _settings.get("has_seen_tutorial", False)
+
+    def set_has_seen_tutorial(self, seen: bool) -> None:
+        self.has_seen_tutorial = seen
+        _settings["has_seen_tutorial"] = seen
+        _save_settings(_settings)
 
     def set_allow_rewrite(self, enabled: bool) -> None:
         self.allow_rewrite = enabled

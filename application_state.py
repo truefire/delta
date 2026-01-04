@@ -366,6 +366,9 @@ class AppState:
     auth_request_data: dict | None = None
     auth_input_text: str = ""
 
+    # Tutorial state
+    show_tutorial_offer: bool = False
+
     queue_start_time: float = 0.0
     
     # System Prompt Cache

@@ -25,6 +25,7 @@ from .popups import (
     render_git_check_popups, render_close_tab_popup, render_exit_confirmation_popup, 
     render_update_popup, render_auth_popup
 )
+from .tutorial import render_tutorial
 
 def create_docking_layout() -> tuple:
     splits = []
@@ -133,6 +134,8 @@ def main_gui():
     render_update_popup()
     render_auth_popup()
     render_api_settings_popup()
+    
+    render_tutorial()
 
 
 def run_gui():

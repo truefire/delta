@@ -435,7 +435,7 @@ def render_chat_session(session):
     avail = imgui.get_content_region_avail()
     
     # Fixed height overhead
-    bottom_overhead = 125
+    bottom_overhead = 95
     if session.waiting_for_approval:
         bottom_overhead += 45
 

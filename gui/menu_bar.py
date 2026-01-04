@@ -66,6 +66,12 @@ def render_menu_bar():
             toggle_theme()
         imgui.end_menu()
 
+    if imgui.begin_menu("Help"):
+        if imgui.menu_item("Tutorial", "", False)[0]:
+            from gui.tutorial import start_tutorial
+            start_tutorial()
+        imgui.end_menu()
+
     button_width = 20
     spacing = 4
 
