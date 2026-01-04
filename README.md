@@ -1,3 +1,5 @@
+[![CI](https://github.com/truefire/delta/actions/workflows/ci.yml/badge.svg)](https://github.com/truefire/delta/actions/workflows/ci.yml)
+
 <img src="https://github.com/user-attachments/assets/65364d23-209a-49e5-ad96-fd9ab6516382" height="300px">
 
 # Overview
