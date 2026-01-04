@@ -4,6 +4,22 @@ from styles import STYLE
 from application_state import state
 from core import config
 
+_tutorial_rects = {}
+
+def register_area(name: str, p_min, p_max):
+    """Register a screen rectangle for a named UI area."""
+    if hasattr(p_min, 'x'):
+        x1, y1 = p_min.x, p_min.y
+    else:
+        x1, y1 = p_min
+
+    if hasattr(p_max, 'x'):
+        x2, y2 = p_max.x, p_max.y
+    else:
+        x2, y2 = p_max
+
+    _tutorial_rects[name] = (x1, y1, x2, y2)
+
 class TutorialState:
     def __init__(self):
         self.is_active = False
@@ -109,71 +125,18 @@ def render_tutorial():
             imgui.get_color_u32(imgui.ImVec4(0, 0, 0, 0.45))
         )
 
-        # Calculate Highlights based on standard layout ratios
-        # Sidebar: 30% width (Left)
-        #   Files: Top 48% height of Sidebar
-        #   Settings: Bottom 52% of Sidebar (SidebarSpace)
-        # Main: Remaining 70% width
-        #   Logs: Bottom 20% height
-        #   Chat: Remaining (Top 80% of Main)
-        #     Tabs: Very top ~35px
-        #     Input: Bottom ~100px of Chat
-
-        w = viewport_size.x
-        h = viewport_size.y
-        x = viewport_pos.x
-        y = viewport_pos.y
-
-        # Layout Logic to match runner.py Splits
-        # Main (Left 70%) | Sidebar (Right 30%)
-        # Main -> Chat (Top 80%) / Logs (Bottom 20%)
-        # Sidebar -> Settings (Top 52%) / Files (Bottom 48%)
-
-        main_w = w * 0.7
-        sidebar_w = w * 0.3
-        
-        c1_x = x
-        c2_x = x + main_w
-        
-        chat_h = h * 0.8
-        files_h = h * 0.48
-        settings_h = h * 0.52
-
-        pad = 10
         target_rects = []
         area = _tutorial.steps[_tutorial.step]["area"]
 
-        if area == "settings":
-            # Right Column Top
-            target_rects.append((c2_x + pad, y + pad, c2_x + sidebar_w - pad, y + settings_h - pad))
-        
-        elif area == "files":
-            # Right Column Bottom
-            target_rects.append((c2_x + pad, y + settings_h + pad, c2_x + sidebar_w - pad, y + h - pad))
-        
-        elif area == "input_composite":
-            # Bottom of Chat Area (Left Col)
-            bottom = y + chat_h
-            # Input (~100) + Buttons (~40)
-            target_rects.append((c1_x + pad, bottom - 150, c1_x + main_w - pad, bottom - pad))
+        if area == "context_targets":
+            r1 = _tutorial_rects.get("tabs")
+            if r1: target_rects.append(r1)
             
-        elif area == "utility_buttons":
-            # Button Row Only
-            bottom = y + chat_h
-            target_rects.append((c1_x + pad, bottom - 60, c1_x + main_w - pad, bottom - 20))
-            
-        elif area == "tabs":
-            # Top of Chat Area (Left Col) - approx under title bar
-            target_rects.append((c1_x + pad, y + 30, c1_x + main_w - pad, y + 70))
-            
-        elif area == "context_targets":
-            # 1. Tabs
-            target_rects.append((c1_x + pad, y + 30, c1_x + main_w - pad, y + 70))
-            # 2. Settings Top (CWD)
-            target_rects.append((c2_x + pad, y + 30, c2_x + sidebar_w - pad, y + 70))
-            # 3. Buttons
-            bottom = y + chat_h
-            target_rects.append((c1_x + pad, bottom - 60, c1_x + main_w - pad, bottom - 20))
+            r2 = _tutorial_rects.get("cwd_area")
+            if r2: target_rects.append(r2)
+        else:
+            r = _tutorial_rects.get(area)
+            if r: target_rects.append(r)
 
         # Red Box Color
         red_col = imgui.get_color_u32(imgui.ImVec4(1.0, 0.2, 0.2, 1.0))
@@ -199,8 +162,7 @@ def render_tutorial():
     imgui.set_next_window_size(imgui.ImVec2(400, 0))
 
     if imgui.begin_popup_modal("TutorialStep", None,
-                               imgui.WindowFlags_.no_resize | imgui.WindowFlags_.no_move | imgui.WindowFlags_.no_title_bar)[
-        0]:
+                               imgui.WindowFlags_.no_resize | imgui.WindowFlags_.no_move | imgui.WindowFlags_.no_title_bar)[0]:
         step_data = _tutorial.steps[_tutorial.step]
 
         # Header

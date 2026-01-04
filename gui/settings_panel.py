@@ -12,6 +12,7 @@ from application_state import (
 )
 from styles import STYLE, apply_imgui_theme
 from .common import render_tooltip, check_for_updates
+from .tutorial import register_area
 
 
 def toggle_theme():
@@ -142,10 +143,15 @@ def render_system_prompt_popup():
 
 
 def render_settings_panel():
+    p_min = imgui.get_window_pos()
+    s_size = imgui.get_window_size()
+    register_area("settings", p_min, imgui.ImVec2(p_min.x + s_size.x, p_min.y + s_size.y))
+
     models = list(AVAILABLE_MODELS.keys())
     focus_modes = ["Off", "Flash", "Yank"]
     ambiguous_modes = ["Replace all", "Ignore", "Fail"]
 
+    imgui.begin_group()
     cwd = str(Path.cwd())
     if len(cwd) > 35:
         cwd = "..." + cwd[-32:]
@@ -191,6 +197,8 @@ def render_settings_panel():
         if imgui.selectable("Explore", False)[0]:
             core.open_path_in_os(Path.cwd())
         imgui.end_popup()
+    imgui.end_group()
+    register_area("cwd_area", imgui.get_item_rect_min(), imgui.get_item_rect_max())
 
     imgui.separator()
 

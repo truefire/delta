@@ -13,6 +13,7 @@ from application_state import (
 )
 from styles import STYLE
 from .common import render_tooltip
+from .tutorial import register_area
 
 
 def _render_group_row(name: str):
@@ -183,6 +184,10 @@ def update_app_stats():
 
 
 def render_files_panel():
+    p_min = imgui.get_window_pos()
+    s_size = imgui.get_window_size()
+    register_area("files", p_min, imgui.ImVec2(p_min.x + s_size.x, p_min.y + s_size.y))
+
     imgui.text("Groups")
     imgui.separator()
 

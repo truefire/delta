@@ -13,6 +13,7 @@ from .common import (
     ensure_user_bubble, unqueue_session, cancel_all_tasks,
     render_tooltip, start_generation
 )
+from .tutorial import register_area
 
 
 def perform_session_revert(session, index: int):
@@ -382,6 +383,7 @@ def render_chat_panel():
             )
 
     imgui.end_child()
+    register_area("tabs", imgui.get_item_rect_min(), imgui.get_item_rect_max())
 
     # Draw Right-Side Controls
     imgui.same_line()
@@ -619,6 +621,7 @@ def render_chat_session(session):
         imgui.set_mouse_cursor(imgui.MouseCursor_.resize_ns)
     imgui.pop_style_color(4)
 
+    p_in_start = imgui.get_cursor_screen_pos()
     imgui.text("Prompt:")
 
     if session.should_focus_input:
@@ -662,6 +665,7 @@ def render_chat_session(session):
     is_busy = session.is_generating or session.is_queued
     is_cancelling = session.cancel_event.is_set()
     
+    imgui.begin_group()
     if is_busy:
         if is_cancelling:
             btn_text = "Cancelling..."
@@ -723,6 +727,8 @@ def render_chat_session(session):
             if imgui.menu_item("Filedig -> Ask", "", False)[0]:
                 submit_filedig(ask_mode=True)
             imgui.end_popup()
+    imgui.end_group()
+    register_area("utility_buttons", imgui.get_item_rect_min(), imgui.get_item_rect_max())
 
 
     if session.is_generating and not is_cancelling:
@@ -812,3 +818,9 @@ def render_chat_session(session):
             if target_x > imgui.get_cursor_pos_x() + 10:
                 imgui.same_line(target_x)
                 imgui.text_colored(STYLE.get_imvec4("fg_dim"), run_str)
+
+    p_in_end = imgui.get_cursor_screen_pos()
+    # Add a bit of height to p_in_end to account for the current line height if text was just drawn
+    p_in_end.y += imgui.get_text_line_height()
+    p_in_end.x += imgui.get_content_region_avail().x
+    register_area("input_composite", p_in_start, p_in_end)
