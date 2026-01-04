@@ -150,6 +150,10 @@ To this end, delta includes tooling for managing the context as frictionlessly a
 
 <img src="https://github.com/user-attachments/assets/f21d8689-9131-48b2-85f8-524fb0a8a858" height="400"/>
 
+## BEST PRACTICES
+
+See [this page](BEST_PRACTICES.md) for best practices for using delta.
+
 ## LLM Providers
 
 Delta uses the standard OpenAI client library, meaning it is compatible with any OpenAI-compatible API. This includes:
