@@ -47,7 +47,7 @@ def create_docking_layout() -> tuple:
     s3.initial_dock = "SidebarSpace"
     s3.new_dock = "FilesSpace"
     s3.direction = imgui.Dir.down
-    s3.ratio = 0.50
+    s3.ratio = 0.48
     splits.append(s3)
 
     windows = []
