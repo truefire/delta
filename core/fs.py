@@ -141,14 +141,15 @@ def open_terminal_in_os(path: Path | str):
                 except Exception:
                     pass
 
-def scan_directory(path: Path) -> tuple[list[str], list[str]]:
+def scan_directory(path: Path, include_hidden: bool = False) -> tuple[list[str], list[str]]:
     files = []
     dirs = []
     try:
         with os.scandir(str(path)) as it:
             for entry in it:
-                if entry.name.startswith('.') or entry.name in DEFAULT_HIDDEN:
-                    continue
+                if not include_hidden:
+                    if entry.name.startswith('.') or entry.name in DEFAULT_HIDDEN:
+                        continue
                 if entry.is_file():
                     files.append(entry.name)
                 elif entry.is_dir():

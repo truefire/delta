@@ -517,6 +517,12 @@ def render_context_manager():
         render_tooltip("Show search results as a flat list.")
 
         imgui.same_line()
+        changed, state.show_hidden_files = imgui.checkbox("Hidden", state.show_hidden_files)
+        render_tooltip("Show hidden files and directories (requires scan).")
+        if changed:
+            refresh_project_files()
+
+        imgui.same_line()
         if imgui.button("Refresh"):
             refresh_project_files()
         if imgui.is_item_hovered():

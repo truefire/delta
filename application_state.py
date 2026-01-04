@@ -277,6 +277,7 @@ class AppState:
     context_search_text: str = ""
     context_flatten_search: bool = False
     last_context_search: str | None = None
+    show_hidden_files: bool = False
 
     # Context Drag Selection
     drag_start_idx: int | None = None
@@ -887,7 +888,7 @@ def _scan_folder_impl(folder_path: Path):
         return
 
     # List content
-    files, dirs = core.scan_directory(folder_path)
+    files, dirs = core.scan_directory(folder_path, include_hidden=state.show_hidden_files)
 
     # Update Tree safely
     with tree_lock:
