@@ -16,7 +16,7 @@ from .fs import (
 )
 
 from .llm import (
-    generate, calculate_input_cost, build_system_message, 
+    generate, calculate_input_cost, calculate_cost, build_system_message, 
     build_file_contents, CancelledError, GenerationError
 )
 

@@ -79,6 +79,13 @@ class ChatSession:
 
     should_focus_input: bool = True
 
+    # Stats
+    stats_context: int = 0
+    stats_prompt: int = 0
+    stats_output: int = 0
+    stats_tool: int = 0
+    stats_cost: float = 0.0
+
     # Context Override (e.g. from Filedig)
     forced_context_files: list | None = None
 
@@ -105,6 +112,7 @@ class ChatSession:
     def from_dict(self, data: dict) -> None:
         """Restore session state from a dictionary."""
         self.history = data.get("history", [])
+        self.recalculate_stats()
         self.session_added_files = {Path(p) for p in data.get("session_added_files", [])}
         self.sent_files = data.get("sent_files", [])
         self.last_prompt = data.get("last_prompt", "")
@@ -143,6 +151,59 @@ class ChatSession:
         
         if self.last_prompt != last_history_content:
             self.input_text = self.last_prompt
+
+    def recalculate_stats(self):
+        """Recalculate session token statistics."""
+        self.stats_context = 0
+        self.stats_prompt = 0
+        self.stats_output = 0
+        self.stats_tool = 0
+        self.stats_cost = 0.0
+        
+        # 1. Prompt
+        if self.input_text:
+            self.stats_prompt = core.estimate_tokens(self.input_text)
+            
+        # 2. History
+        for msg in self.history:
+            role = msg.get("role")
+            content = msg.get("content", "")
+            
+            # Handle list content (text/images)
+            text_len = 0
+            if isinstance(content, list):
+                for part in content:
+                    if part.get("type") == "text":
+                        t = part.get("text", "")
+                        text_len += len(t)
+            elif content:
+                text_len = len(str(content))
+            
+            # Estimate tokens
+            tokens = text_len // core.TOKENS_PER_CHAR_ESTIMATE
+            
+            if role in ("system", "user"):
+                self.stats_context += tokens
+            elif role == "assistant":
+                self.stats_output += tokens
+                # Tool calls
+                tcs = msg.get("tool_calls")
+                if tcs:
+                    for tc in tcs:
+                        try:
+                            f = tc.get("function", {})
+                            s = json.dumps(f)
+                            self.stats_output += len(s) // core.TOKENS_PER_CHAR_ESTIMATE
+                        except: pass
+            elif role == "tool":
+                self.stats_tool += tokens
+        
+        # Cost estimate
+        total_input = self.stats_context + self.stats_prompt + self.stats_tool
+        total_output = self.stats_output
+        
+        cost, _ = core.calculate_cost(total_input, total_output, config.model)
+        self.stats_cost = cost
 
 @dataclass
 class AppState:
@@ -562,6 +623,7 @@ def load_state(name: str):
             new_sess.recover_lost_prompt()
             
             rebuild_session_bubbles(new_sess)
+            new_sess.recalculate_stats()
             state.sessions[sid] = new_sess
             
         state.active_session_id = data.get("active_session_id")
@@ -598,6 +660,7 @@ def load_individual_session(save_name: str, session_idx: int):
         new_sess.group_id = None
         
         rebuild_session_bubbles(new_sess)
+        new_sess.recalculate_stats()
         
         state.active_session_id = new_sess.id
         log_message("Imported session from save.")

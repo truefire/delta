@@ -40,7 +40,7 @@ def calculate_input_cost(token_count: int, model_name: str) -> tuple[float, str]
     cost = _calc_tiered_cost(token_count, pricing, "input")
     return cost, f"${cost:.4f}"
 
-def _calculate_cost(input_tokens: int, output_tokens: int, model_name: str) -> tuple[float, str]:
+def calculate_cost(input_tokens: int, output_tokens: int, model_name: str) -> tuple[float, str]:
     pricing = _get_model_pricing(model_name)
     if not pricing:
         return 0.0, " | Cost: (unknown model pricing)"
@@ -48,6 +48,9 @@ def _calculate_cost(input_tokens: int, output_tokens: int, model_name: str) -> t
     output_cost = _calc_tiered_cost(output_tokens, pricing, "output")
     total_cost = input_cost + output_cost
     return total_cost, f" | Est. Cost: ${total_cost:.4f}"
+
+# Backward compatibility for tests
+_calculate_cost = calculate_cost
 
 def build_file_contents(filenames: list[str]) -> str:
     parts = []
@@ -269,7 +272,7 @@ def generate(
         conversation_history.append({"role": "assistant", "content": full_result})
 
     elapsed_time = time.time() - start_time
-    _, cost_str = _calculate_cost(total_input_tokens, total_output_tokens, config.model)
+    _, cost_str = calculate_cost(total_input_tokens, total_output_tokens, config.model)
     
     logger.info(f"Tokens: {total_input_tokens} in / {total_output_tokens} out{cost_str}")
     logger.info(f"Time: {elapsed_time:.2f}s")

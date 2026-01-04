@@ -46,6 +46,10 @@ def perform_session_revert(session, index: int):
     session.completed = (role == "assistant")
     session.current_bubble = None
 
+    # Invalidate height cache
+    if hasattr(session, "_height_cache"):
+        session._height_cache = {}
+
 
 def render_chat_panel():
     tab_size = 28
@@ -506,33 +510,69 @@ def render_chat_session(session):
 
     revert_target_index = -1
 
+    # visible_min and visible_max are relative to the content start (0.0)
+    scroll_y = imgui.get_scroll_y()
+    win_height = imgui.get_window_height()
+    visible_min = scroll_y - 200  # Buffer to prevent "pop-in"
+    visible_max = scroll_y + win_height + 200
+
+    # Handle Resize: Invalidate cache if width changes significantly
+    curr_width = imgui.get_content_region_avail().x
+    if not hasattr(session, "_last_render_width"): session._last_render_width = 0
+    if not hasattr(session, "_height_cache"): session._height_cache = {}
+
+    if abs(session._last_render_width - curr_width) > 1.0:
+        session._height_cache = {}
+        session._last_render_width = curr_width
+
     for i, bubble in enumerate(session.bubbles):
         is_last = (i == len(session.bubbles) - 1)
         is_loading = is_last and session.is_generating and bubble.role == "assistant" and not session.waiting_for_approval
 
-        action = bubble.render(is_loading=is_loading)
-        
-        if action == "debug":
-            if bubble.message.error_data:
-                err_summary, raw_content = bubble.message.error_data
-                debug_session = create_session()
-                debug_session.is_debug = True
-                state.active_session_id = debug_session.id
-                
-                debug_msg = f"## DEBUG INFO\n**Error:** {err_summary}\n\n**Raw Response:**\n\n{raw_content}"
-                
-                bub = ChatBubble("system", 0)
-                bub.update("Viewing Debug Details for failed request.")
-                debug_session.bubbles.append(bub)
-                
-                bub2 = ChatBubble("assistant", 1)
-                bub2.update(debug_msg)
-                debug_session.bubbles.append(bub2)
+        # 1. Check if we have a known height
+        cached_h = session._height_cache.get(i)
 
-        elif action == "revert":
-            revert_target_index = i
-                
-        imgui.spacing()
+        # 2. Determine Visibility
+        cursor_y = imgui.get_cursor_pos_y()
+        should_render = True
+
+        if cached_h is not None and not is_loading and not is_last:
+            if (cursor_y + cached_h < visible_min) or (cursor_y > visible_max):
+                should_render = False
+
+        if should_render:
+            start_y = imgui.get_cursor_pos_y()
+
+            action = bubble.render(is_loading=is_loading)
+            
+            if action == "debug":
+                if bubble.message.error_data:
+                    err_summary, raw_content = bubble.message.error_data
+                    debug_session = create_session()
+                    debug_session.is_debug = True
+                    state.active_session_id = debug_session.id
+                    
+                    debug_msg = f"## DEBUG INFO\n**Error:** {err_summary}\n\n**Raw Response:**\n\n{raw_content}"
+                    
+                    bub = ChatBubble("system", 0)
+                    bub.update("Viewing Debug Details for failed request.")
+                    debug_session.bubbles.append(bub)
+                    
+                    bub2 = ChatBubble("assistant", 1)
+                    bub2.update(debug_msg)
+                    debug_session.bubbles.append(bub2)
+
+            elif action == "revert":
+                revert_target_index = i
+                    
+            imgui.spacing()
+
+            # Update Cache
+            end_y = imgui.get_cursor_pos_y()
+            session._height_cache[i] = end_y - start_y
+        else:
+            # Virtualize: Advance cursor without rendering contents
+            imgui.dummy(imgui.ImVec2(0, cached_h))
 
     if revert_target_index != -1:
         perform_session_revert(session, revert_target_index)
