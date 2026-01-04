@@ -92,7 +92,19 @@ def before_exit():
 def main_gui():
     """Main GUI function called each frame."""
     state.frame_count += 1
-    
+
+    # First run check
+    if state.frame_count == 10:
+        print("First run detected. Checking for API key...")
+        if not core.API_KEY and "openrouter" in core.API_BASE_URL:
+            print("No API key found. Please set one in the settings.")
+            # Enforce dark theme on first boot for consistency
+            if config.theme != "dark":
+                config.set_theme("dark")
+                STYLE.load("dark")
+                apply_imgui_theme(STYLE.dark)
+            open_api_settings()
+
     # Poll auth (throttled)
     if state.frame_count % 30 == 0:
         poll_auth_request()
@@ -166,14 +178,6 @@ def run_gui():
     if not state.sessions:
         initial_session = create_session()
         state.active_session_id = initial_session.id
-
-    if not core.API_KEY:
-        # Enforce dark theme on first boot for consistency
-        if config.theme != "dark":
-            config.set_theme("dark")
-            STYLE.load("dark")
-
-        open_api_settings()
 
     runner_params = hello_imgui.RunnerParams()
     runner_params.ini_filename = str(APP_DATA_DIR / "imgui.ini")

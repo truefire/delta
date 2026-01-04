@@ -44,7 +44,6 @@ def render_api_settings_popup():
         
     if imgui.begin_popup_modal("API Settings", None, imgui.WindowFlags_.always_auto_resize)[0]:
         inputs = state.api_settings_inputs
-        
         imgui.text("API Configuration")
         imgui.separator()
         
@@ -96,7 +95,7 @@ def render_api_settings_popup():
                 )
                 
                 sync_settings_from_config()
-                
+
                 imgui.close_current_popup()
                 log_message("API settings saved.")
 
