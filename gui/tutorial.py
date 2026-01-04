@@ -103,20 +103,19 @@ def render_tutorial():
     viewport_pos = viewport.pos
     viewport_size = viewport.size
 
-    imgui.set_next_window_pos(viewport_pos)
-    imgui.set_next_window_size(viewport_size)
+    imgui.set_next_window_pos(viewport_pos, imgui.Cond_.always)
+    imgui.set_next_window_size(viewport_size, imgui.Cond_.always)
+    imgui.set_next_window_bg_alpha(0.0)
 
     flags = (imgui.WindowFlags_.no_decoration |
              imgui.WindowFlags_.no_move |
              imgui.WindowFlags_.no_resize |
              imgui.WindowFlags_.no_saved_settings |
              imgui.WindowFlags_.no_nav |
-             imgui.WindowFlags_.no_bring_to_front_on_focus |
-             imgui.WindowFlags_.no_background)
+             imgui.WindowFlags_.no_focus_on_appearing)
 
     if imgui.begin("TutorialOverlay", None, flags):
         draw_list = imgui.get_window_draw_list()
-        fg_draw_list = imgui.get_foreground_draw_list()
 
         # Dimming
         draw_list.add_rect_filled(
@@ -143,7 +142,7 @@ def render_tutorial():
 
         for (x1, y1, x2, y2) in target_rects:
             # Draw highlight box
-            fg_draw_list.add_rect(
+            draw_list.add_rect(
                 imgui.ImVec2(x1, y1),
                 imgui.ImVec2(x2, y2),
                 red_col,
