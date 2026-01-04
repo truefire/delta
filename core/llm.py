@@ -266,7 +266,10 @@ def generate(
 
     except Exception as e:
         if not isinstance(e, (CancelledError, GenerationError)):
-            logger.exception(f"Error during stream processing: {e}")
+            details = f"{e}"
+            if hasattr(e, "body") and e.body:
+                details += f"\nAPI Error Body: {e.body}"
+            logger.exception(f"Error during stream processing: {details}")
         raise e
 
     if conversation_history is not None:

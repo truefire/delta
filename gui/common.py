@@ -512,8 +512,13 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
         state.gui_queue.put({"type": "status", "message": "Generation cancelled"})
     except Exception as e:
         import traceback
+        
+        err_msg = str(e)
+        if hasattr(e, "body") and e.body:
+            err_msg += f"\n\nAPI Body: {e.body}"
+            
         tb = traceback.format_exc()
-        state.gui_queue.put({"type": "error", "session_id": session_id, "message": f"{e}\n{tb}"})
+        state.gui_queue.put({"type": "error", "session_id": session_id, "message": f"{err_msg}\n{tb}"})
         state.gui_queue.put({"type": "status", "message": f"Error: {e}"})
     finally:
         state.gui_queue.put({"type": "end_response", "session_id": session_id})

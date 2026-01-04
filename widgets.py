@@ -29,6 +29,51 @@ generic_code_pattern = re.compile(
     re.MULTILINE | re.DOTALL
 )
 
+# Incomplete patterns for streaming
+incomplete_plan_pattern = re.compile(
+    r"^<<<<<<< PLAN(?:\nTitle:\s*([^\n]*))?(?:\nPrompt:\s*(.*))?$", 
+    re.MULTILINE | re.DOTALL
+)
+
+# Detect start of code block that extends to end of string (missing closing backticks)
+incomplete_diff_pattern = re.compile(
+    r"(?:^([^\n`]+)\n)?^\s*```([^\n]*)\n(.*)$",
+    re.MULTILINE | re.DOTALL
+)
+
+
+def render_loading_spinner(text: str = "Generating...", radius: float = 6.0):
+    """Render a spinner indicator."""
+    pos = imgui.get_cursor_screen_pos()
+    center = imgui.ImVec2(pos.x + radius + 4, pos.y + radius + 1)
+    
+    draw_list = imgui.get_window_draw_list()
+    thickness = 2.0
+    
+    # Background ring
+    color_bg = STYLE.get_u32("fg_dim", 50) 
+    draw_list.add_circle(center, radius, color_bg, 20, thickness)
+    
+    # Rotating Arc
+    t = time.time()
+    start_angle = t * 6.0
+    end_angle = start_angle + (math.pi / 1.5)
+    
+    color_fg = STYLE.get_u32("fg_dim")
+    draw_list.path_clear()
+    draw_list.path_arc_to(center, radius, start_angle, end_angle, 20)
+    draw_list.path_stroke(color_fg, 0, thickness)
+    
+    imgui.dummy(imgui.ImVec2(radius * 2 + 10, radius * 2 + 2))
+    
+    if text:
+        imgui.same_line()
+        dots = int(t * 2) % 4
+        # Strip existing dots if present to avoid double dots
+        base = text.rstrip(".")
+        imgui.align_text_to_frame_padding()
+        imgui.text_colored(STYLE.get_imvec4("fg_dim"), f"{base}{'.' * dots}")
+
 
 def render_viewer_header(
     collapsed: bool,
@@ -100,17 +145,19 @@ class DiffViewerState:
     left_scroll_y: float = 0.0
     right_scroll_y: float = 0.0
     id: int = 0
+    incomplete: bool = False
 
 
 class DiffViewer:
     """Widget to display synchronized side-by-side diffs with navigation."""
 
-    def __init__(self, content: str, block_state: dict, viewer_id: int = 0, filename_hint: str | None = None, language_hint: str | None = None):
+    def __init__(self, content: str, block_state: dict, viewer_id: int = 0, filename_hint: str | None = None, language_hint: str | None = None, incomplete: bool = False):
         self.state = DiffViewerState(
             content=content,
             collapsed=block_state.get("collapsed", True),
             reverted=block_state.get("reverted", set()),
-            id=viewer_id
+            id=viewer_id,
+            incomplete=incomplete
         )
         self.block_state = block_state
         self.filename_hint = filename_hint
@@ -120,6 +167,9 @@ class DiffViewer:
 
     def _parse_content(self):
         """Parse the diff content into hunks."""
+        if self.filename_hint and self.state.filename == "Unknown":
+            self.state.filename = self.filename_hint
+
         # Wrap content in dummy code block for parse_diffs logic
         prefix = f"{self.filename_hint}\n" if self.filename_hint else ""
         info = self.language_hint if self.language_hint else ""
@@ -270,8 +320,9 @@ class DiffViewer:
                 hunks.append(DiffHunk(type="change", old="".join(old_lines[i1:i2]), new="".join(new_lines[j1:j2])))
         return hunks
 
-    def update_content(self, new_content: str):
+    def update_content(self, new_content: str, incomplete: bool = False):
         """Update the diff content."""
+        self.state.incomplete = incomplete
         if self.state.content == new_content:
             return
         self.state.content = new_content
@@ -289,6 +340,10 @@ class DiffViewer:
                 imgui.text_colored(STYLE.get_imvec4("txt_suc"), label)
             else:
                 imgui.text(f"{self.state.filename}")
+            
+            if self.state.incomplete:
+                imgui.same_line()
+                render_loading_spinner("")
 
         def render_right():
             # Apply button
@@ -461,17 +516,19 @@ class PlanViewerState:
     prompt: str = ""
     collapsed: bool = True
     id: int = 0
+    incomplete: bool = False
 
 
 class PlanViewer:
     """Widget to display an implementation plan item."""
 
-    def __init__(self, content: str, block_state: dict, viewer_id: int):
+    def __init__(self, content: str, block_state: dict, viewer_id: int, incomplete: bool = False):
         self.state = PlanViewerState(
             title="Unknown Plan",
             prompt="",
             collapsed=block_state.get("collapsed", True),
-            id=viewer_id
+            id=viewer_id,
+            incomplete=incomplete
         )
         self.block_state = block_state
         self._parse_content(content)
@@ -498,8 +555,9 @@ class PlanViewer:
         self.state.title = title
         self.state.prompt = "\n".join(prompt_lines).strip()
 
-    def update_content(self, new_content: str):
+    def update_content(self, new_content: str, incomplete: bool = False):
         """Update the plan content."""
+        self.state.incomplete = incomplete
         self._parse_content(new_content)
 
     def render(self):
@@ -511,6 +569,10 @@ class PlanViewer:
             imgui.text_colored(STYLE.get_imvec4("btn_run"), "[PLAN]")
             imgui.same_line()
             imgui.text(self.state.title)
+            
+            if self.state.incomplete:
+                imgui.same_line()
+                render_loading_spinner("")
 
         new_collapsed, changed = render_viewer_header(self.state.collapsed, render_label)
         
@@ -771,38 +833,7 @@ class ChatBubble:
         imgui.spacing()
         imgui.separator()
         imgui.spacing()
-
-        # Canvas drawing parameters
-        radius = 7.0
-        thickness = 2.0
-        
-        pos = imgui.get_cursor_screen_pos()
-        center = imgui.ImVec2(pos.x + radius + 4, pos.y + radius + 1)
-        
-        draw_list = imgui.get_window_draw_list()
-        
-        # Background ring (dimmed)
-        color_bg = STYLE.get_u32("fg_dim", 50) 
-        draw_list.add_circle(center, radius, color_bg, 20, thickness)
-        
-        # Rotating Arc (time-based)
-        time = imgui.get_time()
-        start_angle = time * 6.0
-        end_angle = start_angle + (math.pi / 1.5)
-        
-        color_fg = STYLE.get_u32("fg_dim")
-        draw_list.path_clear()
-        draw_list.path_arc_to(center, radius, start_angle, end_angle, 20)
-        draw_list.path_stroke(color_fg, 0, thickness)
-        
-        # Reserve space for the graphic
-        imgui.dummy(imgui.ImVec2(radius * 2 + 10, radius * 2 + 2))
-        imgui.same_line()
-        
-        # Animated text
-        dots = int(time * 2) % 4
-        imgui.align_text_to_frame_padding()
-        imgui.text_colored(STYLE.get_imvec4("fg_dim"), f"Generating{'.' * dots}")
+        render_loading_spinner("Generating...", radius=7.0)
 
     def _get_header_text(self) -> str:
         """Get the header text for the bubble."""
@@ -895,6 +926,57 @@ class ChatBubble:
             if not candidates:
                 remaining = text[pos:]
                 if remaining:
+                    # Check for incomplete blocks being streamed
+                    m_inc_plan = incomplete_plan_pattern.search(remaining)
+                    if m_inc_plan:
+                        if m_inc_plan.start() > 0:
+                             segments.append({"type": "text", "content": remaining[:m_inc_plan.start()]})
+
+                        if pv_idx not in self.message.plan_states:
+                             self.message.plan_states[pv_idx] = {"collapsed": True}
+                        
+                        title = m_inc_plan.group(1) or "..."
+                        prompt = m_inc_plan.group(2) or ""
+                        content = f"Title: {title}\nPrompt: {prompt}"
+
+                        if pv_idx not in self.message.plan_viewers:
+                            self.message.plan_viewers[pv_idx] = PlanViewer(content, self.message.plan_states[pv_idx], pv_idx, incomplete=True)
+                        else:
+                            self.message.plan_viewers[pv_idx].update_content(content, incomplete=True)
+                        
+                        segments.append({"type": "plan", "pv_id": pv_idx})
+                        break
+
+                    m_inc_diff = incomplete_diff_pattern.search(remaining)
+                    if m_inc_diff:
+                        if m_inc_diff.start() > 0:
+                             segments.append({"type": "text", "content": remaining[:m_inc_diff.start()]})
+
+                        if dv_idx not in self.message.block_states:
+                             self.message.block_states[dv_idx] = {"collapsed": True, "reverted": set()}
+                        
+                        filename = m_inc_diff.group(1)
+                        lang = m_inc_diff.group(2)
+                        body = m_inc_diff.group(3)
+                        
+                        if filename: filename = filename.strip()
+                        if lang: lang = lang.strip()
+                        
+                        if dv_idx not in self.message.diff_viewers:
+                            self.message.diff_viewers[dv_idx] = DiffViewer(
+                                body, 
+                                self.message.block_states[dv_idx], 
+                                dv_idx, 
+                                filename_hint=filename, 
+                                language_hint=lang,
+                                incomplete=True
+                            )
+                        else:
+                            self.message.diff_viewers[dv_idx].update_content(body, incomplete=True)
+                        
+                        segments.append({"type": "diff", "dv_id": dv_idx})
+                        break
+
                     segments.append({"type": "text", "content": remaining})
                 break
             
