@@ -760,7 +760,14 @@ def render_chat_session(session):
     imgui.separator()
 
     # Context calculations
-    context_tokens = 0
+    session.recalculate_stats()
+    
+    # 1. Base Context from History (Text) + Previous Output (Assistant)
+    # Both count as Input context for the *next* request
+    base_context = session.stats_context + session.stats_output 
+    
+    # 2. File Context
+    file_tokens = 0
     if not session.is_dig:
         if session.request_start_time > 0 and not session.is_queued:
             # Show actual context used for this request
@@ -772,27 +779,31 @@ def render_chat_session(session):
             # Show current selection
             checked_files = [f for f in state.selected_files if state.file_checked.get(f, True) and state.file_exists_cache.get(f, True)]
 
-        context_tokens = sum(core.get_file_stats(f)[1] for f in checked_files)
-
+        file_tokens = sum(core.get_file_stats(f)[1] for f in checked_files)
+    
+    # 3. Tool Context (Tool Results from history)
+    tool_tokens = session.stats_tool
+    
+    # 4. Current Prompt
     prompt_tokens = estimate_tokens(session.input_text)
     
-    output_tokens = 0
-    if session.bubbles:
-        last_b = session.bubbles[-1]
-        if last_b.role == "assistant":
-            output_tokens = estimate_tokens(last_b.content)
-
-    total_tokens = context_tokens + prompt_tokens + output_tokens
+    # Total Input Context Size
+    total_tokens = base_context + file_tokens + tool_tokens + prompt_tokens
+    
+    # For display, we merge base history + files into "Context" to keep it clean, 
+    # unless it's a Dig session where distinction matters less, but we show Tool explicitly.
+    display_context = base_context + file_tokens
 
     model_list = list(AVAILABLE_MODELS.keys())
     model_name = model_list[state.model_idx] if state.model_idx < len(model_list) else ""
     _, price_str = calculate_input_cost(total_tokens, model_name)
 
     status_parts = []
-    status_parts.append(f"Context: ~{context_tokens}")
+    status_parts.append(f"Context: ~{display_context}")
+    if tool_tokens > 0:
+        status_parts.append(f"Tool: ~{tool_tokens}")
+
     status_parts.append(f"Prompt: ~{prompt_tokens}")
-    if output_tokens > 0:
-        status_parts.append(f"Output: ~{output_tokens}")
     status_parts.append(f"Total: ~{total_tokens}")
     status_parts.append(f"Est: {price_str}")
 
