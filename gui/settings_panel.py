@@ -5,10 +5,10 @@ from imgui_bundle import imgui, hello_imgui
 
 import sys
 import core
-from core import config, AVAILABLE_MODELS, update_core_settings, is_git_installed, is_git_repo, open_diff_report, get_available_backups
+from core import config, AVAILABLE_MODELS, update_core_settings, is_git_installed, is_git_repo, open_diff_report, get_available_backups, undo_last_changes
 from application_state import (
     state, sync_config_from_settings, sync_settings_from_config, save_fileset, 
-    change_working_directory, log_message
+    change_working_directory, log_message, refresh_project_files
 )
 from styles import STYLE, apply_imgui_theme
 from .common import render_tooltip, check_for_updates
@@ -435,9 +435,13 @@ def render_settings_panel():
     if state.frame_count % 60 == 0:
         state.can_use_git = is_git_installed() and is_git_repo()
 
-    btn_label = "Review Uncommitted" if state.can_use_git else "Review Latest Changes"
+    btn_label = "Review" if state.can_use_git else "Review Latest Changes"
 
-    if imgui.button(btn_label, imgui.ImVec2(-1, 0)):
+    avail_w = imgui.get_content_region_avail().x
+    half_w = (avail_w - 8) / 2
+    third_w = (avail_w - 16) / 3
+
+    if imgui.button(btn_label, imgui.ImVec2(third_w, 0)):
         try:
             if state.can_use_git:
                 open_diff_report(use_git=True)
@@ -454,12 +458,32 @@ def render_settings_panel():
     if imgui.is_item_hovered():
         imgui.set_tooltip("Generate and view a visual diff of the changes.")
 
-    if imgui.button("Sessions", imgui.ImVec2(-1, 0)):
+    imgui.same_line()
+    if imgui.button("Backups", imgui.ImVec2(third_w, 0)):
+        state.show_backup_history = True
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("View backup history and restore files.")
+
+    imgui.same_line()
+
+    if imgui.button("Undo Latest", imgui.ImVec2(third_w, 0)):
+        res = undo_last_changes()
+        if "error" in res:
+            log_message(f"Undo failed: {res['error']}")
+        else:
+            log_message(f"Undid changes to {len(res)} files.")
+            refresh_project_files()
+    if imgui.is_item_hovered():
+        imgui.set_tooltip("Rollback the most recent change. Can be repeated.")
+
+    if imgui.button("Sessions", imgui.ImVec2(half_w, 0)):
         state.show_sessions_window = True
     if imgui.is_item_hovered():
         imgui.set_tooltip("Open the Session Manager window.")
 
-    if imgui.button("System Prompt", imgui.ImVec2(-1, 0)):
+    imgui.same_line()
+
+    if imgui.button("System Prompt", imgui.ImVec2(half_w, 0)):
         state.show_system_prompt_popup = True
         state.temp_system_prompt = config.extra_system_prompt
     if imgui.is_item_hovered():
