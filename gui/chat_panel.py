@@ -89,6 +89,27 @@ def perform_session_revert(session, index: int):
         session._height_cache = {}
 
 
+def perform_session_undo(session, index: int):
+    """Undo file changes associated with a bubble and revert history."""
+    if index < 0 or index >= len(session.bubbles): return
+    target_bubble = session.bubbles[index]
+    
+    if target_bubble.message.backup_id:
+        from core import backup_manager
+        from application_state import refresh_project_files
+        try:
+            res = backup_manager.rollback_to_session(target_bubble.message.backup_id)
+            log_message(f"Undid changes. Restored {len(res)} files.")
+            refresh_project_files()
+        except Exception as e:
+            log_message(f"Error undoing changes: {e}")
+            return
+    
+    # Revert chat history to the user message preceding this assistant message
+    if index > 0:
+        perform_session_revert(session, index - 1)
+
+
 def render_chat_panel():
     tab_size = 28
     tab_spacing = 4
@@ -550,6 +571,7 @@ def render_chat_session(session):
 
     revert_target_index = -1
     fork_target_index = -1
+    undo_target_index = -1
 
     # visible_min and visible_max are relative to the content start (0.0)
     scroll_y = imgui.get_scroll_y()
@@ -608,6 +630,9 @@ def render_chat_session(session):
             
             elif action == "fork":
                 fork_target_index = i
+            
+            elif action == "undo":
+                undo_target_index = i
                     
             imgui.spacing()
 
@@ -623,6 +648,9 @@ def render_chat_session(session):
 
     if fork_target_index != -1:
         perform_session_fork(session, fork_target_index)
+
+    if undo_target_index != -1:
+        perform_session_undo(session, undo_target_index)
 
     if session.scroll_to_bottom:
         imgui.set_scroll_here_y(1.0)

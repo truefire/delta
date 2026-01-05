@@ -558,6 +558,9 @@ def rebuild_session_bubbles(session: ChatSession):
         role = msg.get("role", "user")
         
         bubble = ChatBubble(role, i)
+        if "backup_id" in msg:
+            bubble.message.backup_id = msg["backup_id"]
+            
         content = msg.get("content", "")
         if content is None: content = ""
 

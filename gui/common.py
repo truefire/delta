@@ -161,6 +161,10 @@ def handle_queue_event(event: dict):
             session.failed = False
             session.completed = True
             session.backup_id = event.get("backup_id")
+            if session.backup_id and session.history and session.history[-1].get("role") == "assistant":
+                session.history[-1]["backup_id"] = session.backup_id
+                if session.bubbles and session.bubbles[-1].role == "assistant":
+                    session.bubbles[-1].message.backup_id = session.backup_id
             state.backup_list = None
 
     elif event_type == "failure":

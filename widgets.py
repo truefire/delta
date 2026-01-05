@@ -603,6 +603,7 @@ class ChatMessage:
     """Represents a single chat message."""
     role: str  # "user", "assistant", "system", "error"
     content: str = ""
+    backup_id: str | None = None
     diff_viewers: dict = field(default_factory=dict)
     block_states: dict = field(default_factory=dict)
     plan_viewers: dict = field(default_factory=dict)
@@ -724,12 +725,18 @@ class ChatBubble:
         md_w = imgui.calc_text_size(md_label).x + 20
         revert_label = "<<"
         revert_w = imgui.calc_text_size(revert_label).x + 20
+        undo_label = "Undo"
+        undo_w = imgui.calc_text_size(undo_label).x + 20
         spacing = 8
         
         total_btn_w = md_w
         show_revert = (self.message.role != "error")
+        show_undo = show_revert and self.message.backup_id
+
         if show_revert:
             total_btn_w += revert_w + spacing
+        if show_undo:
+            total_btn_w += undo_w + spacing
             
         avail_w = imgui.get_content_region_avail().x
         current_x = imgui.get_cursor_pos_x()
@@ -737,6 +744,31 @@ class ChatBubble:
         if avail_w > total_btn_w:
             imgui.set_cursor_pos_x(current_x + avail_w - total_btn_w)
             
+        if show_undo:
+            imgui.push_style_color(imgui.Col_.button, STYLE.get_imvec4("btn_small"))
+            if imgui.small_button(f"{undo_label}##undo_{self.message_id}"):
+                imgui.open_popup(f"ConfirmUndo_{self.message_id}")
+            imgui.pop_style_color()
+            
+            if imgui.is_item_hovered():
+                imgui.set_tooltip(f"Rollback files to state before this step (Backup: {self.message.backup_id})")
+
+            if imgui.begin_popup_modal(f"ConfirmUndo_{self.message_id}", None, imgui.WindowFlags_.always_auto_resize)[0]:
+                imgui.text("Rollback files from this point?")
+                imgui.text_colored(STYLE.get_imvec4("btn_cncl"), "This will undo changes and revert chat history.")
+                imgui.separator()
+                
+                if imgui.button("Yes, Undo", imgui.ImVec2(120, 0)):
+                    action = "undo"
+                    imgui.close_current_popup()
+                
+                imgui.same_line()
+                if imgui.button("Cancel", imgui.ImVec2(120, 0)):
+                    imgui.close_current_popup()
+                imgui.end_popup()
+
+            imgui.same_line(0, spacing)
+
         if show_revert:
             imgui.push_style_color(imgui.Col_.button, STYLE.get_imvec4("btn_small"))
             popup_id = f"Confirm Revert?###ConfirmRevert_{self.message_id}"
