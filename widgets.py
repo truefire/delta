@@ -745,8 +745,13 @@ class ChatBubble:
             imgui.pop_style_color()
 
             if imgui.is_item_hovered():
-                imgui.set_tooltip("Revert session to this point (undoing subsequent messages)")
+                imgui.set_tooltip("Revert session to this point (undoing subsequent messages)\nRight-click to fork")
             
+            if imgui.begin_popup_context_item(f"ctx_rev_{self.message_id}"):
+                if imgui.menu_item("Fork in new tab", "", False)[0]:
+                    action = "fork"
+                imgui.end_popup()
+
             imgui.same_line(0, spacing)
 
             center = imgui.get_main_viewport().get_center()

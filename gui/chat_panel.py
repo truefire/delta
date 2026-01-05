@@ -5,7 +5,7 @@ from imgui_bundle import imgui
 
 import core
 from core import build_system_message, estimate_tokens, calculate_input_cost, open_diff_report, AVAILABLE_MODELS
-from application_state import state, create_session, log_message, quicksave_session
+from application_state import state, create_session, log_message, quicksave_session, rebuild_session_bubbles
 from widgets import ChatBubble, DiffViewer, DiffHunk, draw_status_icon
 from styles import STYLE
 from .common import (
@@ -14,6 +14,43 @@ from .common import (
     render_tooltip, start_generation
 )
 from .tutorial import register_area
+
+
+def perform_session_fork(session, index: int):
+    """Fork session state from a specific bubble index into a new tab."""
+    if index < 0 or index >= len(session.bubbles):
+        return
+
+    target_bubble = session.bubbles[index]
+    role = target_bubble.role
+    
+    # Create new session
+    new_session = create_session()
+    new_session.is_ask_mode = session.is_ask_mode
+    new_session.group_id = session.group_id
+    new_session.sent_files = list(session.sent_files)
+    
+    # Calculate cutoff
+    cutoff = index
+    if role == "user":
+        # Like revert: exclude this message from history, put in input
+        new_session.input_text = target_bubble.content
+    elif role == "assistant":
+        # Include this message
+        cutoff = index + 1
+    else:
+        # System/Error etc. Just include up to this point
+        cutoff = index + 1
+    
+    # Apply history slice with bounds check
+    hist_len = len(session.history)
+    safe_cutoff = min(cutoff, hist_len)
+    
+    new_session.history = [dict(m) for m in session.history[:safe_cutoff]]
+    
+    rebuild_session_bubbles(new_session)
+    state.active_session_id = new_session.id
+    log_message(f"Forked session #{session.id} to #{new_session.id}")
 
 
 def perform_session_revert(session, index: int):
@@ -507,10 +544,11 @@ def render_chat_session(session):
         state.cached_sys_bubble.render()
         
         imgui.spacing()
-        imgui.separator()
-        imgui.spacing()
+    imgui.separator()
+    imgui.spacing()
 
     revert_target_index = -1
+    fork_target_index = -1
 
     # visible_min and visible_max are relative to the content start (0.0)
     scroll_y = imgui.get_scroll_y()
@@ -566,6 +604,9 @@ def render_chat_session(session):
 
             elif action == "revert":
                 revert_target_index = i
+            
+            elif action == "fork":
+                fork_target_index = i
                     
             imgui.spacing()
 
@@ -578,6 +619,9 @@ def render_chat_session(session):
 
     if revert_target_index != -1:
         perform_session_revert(session, revert_target_index)
+
+    if fork_target_index != -1:
+        perform_session_fork(session, fork_target_index)
 
     if session.scroll_to_bottom:
         imgui.set_scroll_here_y(1.0)
