@@ -52,7 +52,7 @@ class ChatSession:
     is_ask_mode: bool = False
     is_debug: bool = False
     is_planning: bool = False  # True if this is a planning generation session
-    is_filedig: bool = False  # True if this is a file discovery session
+    is_dig: bool = False  # True if this is a file discovery session
     failed: bool = False  # True if last request failed
     completed: bool = False  # True if last request completed successfully
 
@@ -86,7 +86,7 @@ class ChatSession:
     stats_tool: int = 0
     stats_cost: float = 0.0
 
-    # Context Override (e.g. from Filedig)
+    # Context Override (e.g. from Dig)
     forced_context_files: list | None = None
 
     def to_dict(self) -> dict:
@@ -99,7 +99,7 @@ class ChatSession:
             "is_ask_mode": self.is_ask_mode,
             "is_debug": self.is_debug,
             "is_planning": self.is_planning,
-            "is_filedig": self.is_filedig,
+            "is_dig": self.is_dig,
             "failed": self.failed,
             "completed": self.completed,
             "backup_id": self.backup_id,
@@ -119,7 +119,7 @@ class ChatSession:
         self.is_ask_mode = data.get("is_ask_mode", False)
         self.is_debug = data.get("is_debug", False)
         self.is_planning = data.get("is_planning", False)
-        self.is_filedig = data.get("is_filedig", False)
+        self.is_dig = data.get("is_dig", getattr(data, "is_filedig", False)) # Fallback for legacy saves
         self.failed = data.get("failed", False)
         self.completed = data.get("completed", False)
         self.backup_id = data.get("backup_id")
@@ -253,7 +253,7 @@ class AppState:
     max_tries: str = str(config.default_tries)
     recursions: str = str(config.default_recurse)
     timeout: str = str(config.default_timeout)
-    filedig_max_turns: str = str(config.filedig_max_turns)
+    dig_max_turns: str = str(config.dig_max_turns)
     output_sharding_limit: str = str(config.output_sharding_limit)
     sharding_ratio: str = str(config.sharding_ratio)
     max_shards: str = str(config.max_shards)
@@ -474,8 +474,8 @@ def rebuild_session_bubbles(session: ChatSession):
     """Rebuild ChatBubbles from history."""
     session.bubbles = []
 
-    if session.is_filedig:
-        # Reconstruct filedig session to match runtime appearance
+    if session.is_dig:
+        # Reconstruct dig session to match runtime appearance
         
         # 1. User Prompt
         user_content = session.last_prompt
@@ -1015,7 +1015,7 @@ def sync_settings_from_config():
     state.max_tries = str(config.default_tries)
     state.recursions = str(config.default_recurse)
     state.timeout = str(config.default_timeout)
-    state.filedig_max_turns = str(config.filedig_max_turns)
+    state.dig_max_turns = str(config.dig_max_turns)
     state.output_sharding_limit = str(config.output_sharding_limit)
     state.max_shards = str(config.max_shards)
     state.sharding_ratio = str(config.sharding_ratio)
@@ -1064,7 +1064,7 @@ def sync_config_from_settings():
     except ValueError: pass
 
     try:
-        config.set_filedig_max_turns(int(state.filedig_max_turns))
+        config.set_dig_max_turns(int(state.dig_max_turns))
     except ValueError: pass
 
     try:

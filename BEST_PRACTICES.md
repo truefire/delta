@@ -16,10 +16,10 @@ This page contains a collection of tips for using delta effectively.
 
 - The ideal workflow is to select the minimal set of relevant files and use RUN or ASK for a single task.
 - ASK -> "Okay do that" -> RUN is a good two-step workflow that gives the LLM more time to think about an issue and lets you review the plan before committing to it.
-- PLAN and FILEDIG are niche utility tools -- they're less reliable than vanilla RUN/ASK, but they solve specific problems.
+- PLAN and DIG are niche utility tools -- they're less reliable than vanilla RUN/ASK, but they solve specific problems.
 - While Delta supports multi-turn tasks, it's generally not the best way to use the tool.
 
 ### Tools
 
 - Your preferred git tooling is the best way to do code review, but the `Review` button is there if you don't want to do that.
-- When using FILEDIG, try to use specific terms in your prompt that the LLM can search. Pointing it to the write part of the filesystem can help a lot, especially in a large project.
+- When using DIG, try to use specific terms in your prompt that the LLM can search. Pointing it to the write part of the filesystem can help a lot, especially in a large project.

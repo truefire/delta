@@ -1152,7 +1152,7 @@ def draw_status_icon(draw_list, cx: float, cy: float, status: str, badge: str | 
         "running": imgui.get_color_u32(imgui.ImVec4(0.13, 0.59, 0.95, 1.0)),      
         "running_ask": imgui.get_color_u32(imgui.ImVec4(0.61, 0.15, 0.69, 1.0)),  
         "running_plan": imgui.get_color_u32(imgui.ImVec4(0.00, 0.73, 0.83, 1.0)), 
-        "running_filedig": imgui.get_color_u32(imgui.ImVec4(1.0, 0.56, 0.0, 1.0)),
+        "running_dig": imgui.get_color_u32(imgui.ImVec4(1.0, 0.56, 0.0, 1.0)),
         "queued": imgui.get_color_u32(imgui.ImVec4(1.0, 0.60, 0.0, 1.0)),         
         "done": imgui.get_color_u32(imgui.ImVec4(0.30, 0.69, 0.31, 1.0)),         
         "failed": imgui.get_color_u32(imgui.ImVec4(0.96, 0.26, 0.21, 1.0)),       
@@ -1160,10 +1160,10 @@ def draw_status_icon(draw_list, cx: float, cy: float, status: str, badge: str | 
         "debug": imgui.get_color_u32(imgui.ImVec4(0.96, 0.26, 0.21, 1.0)),        
     }
     colors["queued_plan"] = colors["queued"]
-    colors["queued_filedig"] = colors["queued"]
+    colors["queued_dig"] = colors["queued"]
     colors["done_plan"] = colors["done"]
     colors["done_ask"] = colors["done"]
-    colors["done_filedig"] = colors["done"]
+    colors["done_dig"] = colors["done"]
     color = colors.get(status, colors["inactive"])
 
     if status.startswith("running"):
@@ -1187,7 +1187,7 @@ def draw_status_icon(draw_list, cx: float, cy: float, status: str, badge: str | 
         draw_list.add_circle(imgui.ImVec2(cx, cy), 5, color, 12, 1.5)
         draw_list.add_line(imgui.ImVec2(cx, cy), imgui.ImVec2(cx, cy - 3), color, 1.5)
         draw_list.add_line(imgui.ImVec2(cx, cy), imgui.ImVec2(cx + 2, cy), color, 1.5)
-    elif status in ("running_filedig", "done_filedig", "queued_filedig"):
+    elif status in ("running_dig", "done_dig", "queued_dig"):
         # Folder Icon
         draw_list.add_line(imgui.ImVec2(cx - 5, cy - 4), imgui.ImVec2(cx - 1, cy - 4), color, 1.5)
         draw_list.add_line(imgui.ImVec2(cx - 1, cy - 4), imgui.ImVec2(cx + 1, cy - 2), color, 1.5)

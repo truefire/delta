@@ -141,7 +141,7 @@ class DeltaToolConfig:
         self.default_tries = _settings.get("default_tries", 2)
         self.default_recurse = _settings.get("default_recurse", 0)
         self.default_timeout = _settings.get("default_timeout", 10)
-        self.filedig_max_turns = _settings.get("filedig_max_turns", 200)
+        self.dig_max_turns = _settings.get("dig_max_turns", _settings.get("filedig_max_turns", 200))
         self.default_ambiguous_mode = _settings.get("default_ambiguous_mode", "replace_all")
 
         self.diff_fuzzy_lines_threshold = _settings.get("diff_fuzzy_lines_threshold", 0.95)
@@ -261,9 +261,10 @@ class DeltaToolConfig:
         _settings["default_timeout"] = timeout
         _save_settings(_settings)
 
-    def set_filedig_max_turns(self, turns: int) -> None:
-        self.filedig_max_turns = turns
-        _settings["filedig_max_turns"] = turns
+    def set_dig_max_turns(self, turns: int) -> None:
+        self.dig_max_turns = turns
+        _settings["dig_max_turns"] = turns
+        _settings.pop("filedig_max_turns", None) # Clean up legacy
         _save_settings(_settings)
 
     def set_default_ambiguous_mode(self, mode: str) -> None:

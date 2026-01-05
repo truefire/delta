@@ -32,7 +32,7 @@ from .patching import (
 )
 
 from .workflow import (
-    process_request, run_filedig_agent
+    process_request, run_dig_agent
 )
 
 from .analysis import (

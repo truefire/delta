@@ -418,8 +418,8 @@ def render_settings_panel():
     imgui.text("Dig Turns:")
     imgui.same_line()
     imgui.set_next_item_width(50)
-    changed, state.filedig_max_turns = imgui.input_text("##fdturns", state.filedig_max_turns)
-    render_tooltip("Max turns for Filedig agent.")
+    changed, state.dig_max_turns = imgui.input_text("##digturns", state.dig_max_turns)
+    render_tooltip("Max turns for Dig agent.")
     if changed:
         sync_config_from_settings()
 

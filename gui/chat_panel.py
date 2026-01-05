@@ -9,7 +9,7 @@ from application_state import state, create_session, log_message, quicksave_sess
 from widgets import ChatBubble, DiffViewer, DiffHunk, draw_status_icon
 from styles import STYLE
 from .common import (
-    submit_prompt, submit_plan, submit_filedig, cancel_generation, 
+    submit_prompt, submit_plan, submit_dig, cancel_generation, 
     ensure_user_bubble, unqueue_session, cancel_all_tasks,
     render_tooltip, start_generation
 )
@@ -219,17 +219,17 @@ def render_chat_panel():
         if session.is_generating:
             if session.is_planning: status = "running_plan"
             elif session.is_ask_mode: status = "running_ask"
-            elif session.is_filedig: status = "running_filedig"
+            elif session.is_dig: status = "running_dig"
             else: status = "running"
         elif session.is_queued:
             if session.is_planning: status = "queued_plan"
-            elif session.is_filedig: status = "queued_filedig"
+            elif session.is_dig: status = "queued_dig"
             else: status = "queued"
         elif session.failed: status = "failed"
         elif session.completed:
             if session.is_planning: status = "done_plan"
             elif session.is_ask_mode: status = "done_ask"
-            elif session.is_filedig: status = "done_filedig"
+            elif session.is_dig: status = "done_dig"
             else: status = "done"
         elif session.is_debug: status = "debug"
         else: status = "inactive"
@@ -453,7 +453,7 @@ def render_chat_session(session):
 
     imgui.begin_child("chat_history", imgui.ImVec2(0, history_height), child_flags=imgui.ChildFlags_.borders)
 
-    if state.show_system_prompt and not session.is_filedig:
+    if state.show_system_prompt and not session.is_dig:
         if session.request_start_time > 0:
             checked_files = sorted(session.sent_files) if session.sent_files else []
         else:
@@ -715,17 +715,17 @@ def render_chat_session(session):
         imgui.same_line()
 
         imgui.push_style_color(imgui.Col_.button, STYLE.get_imvec4("btn_dig"))
-        if imgui.button("Filedig", imgui.ImVec2(80, 0)):
-            submit_filedig()
+        if imgui.button("Dig", imgui.ImVec2(80, 0)):
+            submit_dig()
         imgui.pop_style_color()
         if imgui.is_item_hovered():
             imgui.set_tooltip("Agentic search for files")
 
-        if imgui.begin_popup_context_item("filedig_ctx"):
-            if imgui.menu_item("Filedig -> Plan", "", False)[0]:
-                submit_filedig(is_planning=True)
-            if imgui.menu_item("Filedig -> Ask", "", False)[0]:
-                submit_filedig(ask_mode=True)
+        if imgui.begin_popup_context_item("dig_ctx"):
+            if imgui.menu_item("Dig -> Plan", "", False)[0]:
+                submit_dig(is_planning=True)
+            if imgui.menu_item("Dig -> Ask", "", False)[0]:
+                submit_dig(ask_mode=True)
             imgui.end_popup()
     imgui.end_group()
     register_area("utility_buttons", imgui.get_item_rect_min(), imgui.get_item_rect_max())
@@ -761,12 +761,12 @@ def render_chat_session(session):
 
     # Context calculations
     context_tokens = 0
-    if not session.is_filedig:
+    if not session.is_dig:
         if session.request_start_time > 0 and not session.is_queued:
             # Show actual context used for this request
             checked_files = [Path(f) for f in session.sent_files]
         elif session.forced_context_files is not None:
-            # Show context that will be used (e.g. from filedig)
+            # Show context that will be used (e.g. from dig)
             checked_files = [Path(f) for f in session.forced_context_files]
         else:
             # Show current selection

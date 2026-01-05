@@ -42,7 +42,7 @@ class TutorialState:
             },
             {
                 "title": "Utilities",
-                "text": "PLAN will break your request down into sub-tasks. FILEDIG will automatically discover context for you. These tools are less reliable than a vanilla RUN task, but they solve certain use cases.",
+                "text": "PLAN will break your request down into sub-tasks. DIG will automatically discover context for you. These tools are less reliable than a vanilla RUN task, but they solve certain use cases.",
                 "area": "utility_buttons"
             },
             {

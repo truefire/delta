@@ -48,7 +48,7 @@ def create_text_response(content):
     
     return mock_response
 
-def test_filedig_success_flow(temp_cwd, mock_openai):
+def test_dig_success_flow(temp_cwd, mock_openai):
     # Setup filesystem
     (temp_cwd / "target.py").write_text("target content")
     (temp_cwd / "ignore.py").touch()
@@ -66,7 +66,7 @@ def test_filedig_success_flow(temp_cwd, mock_openai):
     def output_func(msg):
         output_log.append(msg)
         
-    result = core.run_filedig_agent("Find target", output_func)
+    result = core.run_dig_agent("Find target", output_func)
     
     assert result["success"] is True
     assert result["files"] == ["target.py"]
@@ -89,7 +89,7 @@ def test_filedig_success_flow(temp_cwd, mock_openai):
     assert "target.py" in tool_msg["content"]
     assert "ignore.py" in tool_msg["content"]
 
-def test_filedig_search_tool(temp_cwd, mock_openai):
+def test_dig_search_tool(temp_cwd, mock_openai):
     # Setup
     (temp_cwd / "src").mkdir()
     (temp_cwd / "src/main.py").write_text("def my_func(): pass")
@@ -101,7 +101,7 @@ def test_filedig_search_tool(temp_cwd, mock_openai):
         create_tool_call_response("submit_findings", {"files": ["src/main.py"]})
     ]
     
-    result = core.run_filedig_agent("Find func", lambda x: None)
+    result = core.run_dig_agent("Find func", lambda x: None)
     
     assert result["success"] is True
     assert "src/main.py" in result["files"]
@@ -114,7 +114,7 @@ def test_filedig_search_tool(temp_cwd, mock_openai):
     assert "src/main.py" in tool_msg["content"]
     assert "def my_func():" in tool_msg["content"]
 
-def test_filedig_read_tool(temp_cwd, mock_openai):
+def test_dig_read_tool(temp_cwd, mock_openai):
     # Setup
     f = temp_cwd / "long.py"
     lines = [f"Line {i}" for i in range(100)]
@@ -126,7 +126,7 @@ def test_filedig_read_tool(temp_cwd, mock_openai):
         create_tool_call_response("submit_findings", {"files": []})
     ]
     
-    core.run_filedig_agent("read it", lambda x: None)
+    core.run_dig_agent("read it", lambda x: None)
     
     second_call = mock_openai.chat.completions.create.call_args_list[1]
     messages = second_call.kwargs['messages']
@@ -138,14 +138,14 @@ def test_filedig_read_tool(temp_cwd, mock_openai):
     # Check bounds logic? The test content "Line 0" to "Line 99".
     # Snippet lines[9:20] -> Line 9 ... Line 19.
 
-def test_filedig_path_security(temp_cwd, mock_openai):
+def test_dig_path_security(temp_cwd, mock_openai):
     # Try to read outside CWD
     mock_openai.chat.completions.create.side_effect = [
         create_tool_call_response("read_file_snippet", {"path": "../secret.txt"}),
         create_tool_call_response("submit_findings", {"files": []})
     ]
     
-    core.run_filedig_agent("hack", lambda x: None)
+    core.run_dig_agent("hack", lambda x: None)
     
     second_call = mock_openai.chat.completions.create.call_args_list[1]
     messages = second_call.kwargs['messages']
@@ -154,11 +154,11 @@ def test_filedig_path_security(temp_cwd, mock_openai):
     assert "Error" in tool_msg["content"]
     assert "outside" in tool_msg["content"]
 
-def test_filedig_max_turns(temp_cwd, mock_openai):
+def test_dig_max_turns(temp_cwd, mock_openai):
     # Set max turns low
     from core import config
-    orig = config.filedig_max_turns
-    config.filedig_max_turns = 2
+    orig = config.dig_max_turns
+    config.dig_max_turns = 2
     
     try:
         # Mock LLM just chatting (no tool calls or tools that don't terminate)
@@ -168,16 +168,16 @@ def test_filedig_max_turns(temp_cwd, mock_openai):
             create_tool_call_response("submit_findings", {"files": []}) # Should not be reached
         ]
         
-        result = core.run_filedig_agent("hello", lambda x: None)
+        result = core.run_dig_agent("hello", lambda x: None)
         
         assert result["success"] is False
         assert "Max turns" in result["message"]
         assert mock_openai.chat.completions.create.call_count == 2
         
     finally:
-        config.filedig_max_turns = orig
+        config.dig_max_turns = orig
 
-def test_filedig_cancel(temp_cwd, mock_openai):
+def test_dig_cancel(temp_cwd, mock_openai):
     import threading
     cancel_event = threading.Event()
     cancel_event.set()
@@ -185,4 +185,4 @@ def test_filedig_cancel(temp_cwd, mock_openai):
     from core import CancelledError
     
     with pytest.raises(CancelledError):
-        core.run_filedig_agent("go", lambda x: None, cancel_event=cancel_event)
+        core.run_dig_agent("go", lambda x: None, cancel_event=cancel_event)

@@ -15,7 +15,7 @@ from .backups import undo_last_changes
 
 logger = logging.getLogger(__name__)
 
-FILEDIG_TOOLS = [
+DIG_TOOLS = [
     {
         "type": "function",
         "function": {
@@ -189,7 +189,7 @@ def _execute_attempt(
 
     return True, backup_id, None, None
 
-def run_filedig_agent(
+def run_dig_agent(
     prompt: str, output_func: OutputFunc, cancel_event: threading.Event | None = None, history: list[dict] | None = None,
 ) -> dict:
     def _tool_ls(args):
@@ -256,7 +256,7 @@ def run_filedig_agent(
         except Exception as e: return f"Error searching: {e}"
 
     root_listing = _tool_ls({"path": "."})
-    system_msg = f"You are 'Filedig', an autonomous file exploration agent.\nYour goal is to find relevant files.\n\nCurrent Root:\n{root_listing}\n\nProcess:\n1. Analyze request.\n2. Use ls/search/read.\n3. Call 'submit_findings'."
+    system_msg = f"You are 'Dig', an autonomous file exploration agent.\nYour goal is to find relevant files.\n\nCurrent Root:\n{root_listing}\n\nProcess:\n1. Analyze request.\n2. Use ls/search/read.\n3. Call 'submit_findings'."
     
     if history is not None:
         messages = history
@@ -267,15 +267,15 @@ def run_filedig_agent(
         messages = [{"role": "system", "content": system_msg}, {"role": "user", "content": f"Find files relevant to this request: {prompt}"}]
 
     client = _create_openai_client()
-    max_turns = config.filedig_max_turns
+    max_turns = config.dig_max_turns
     total_tool_calls = 0
 
-    logger.info("Starting Filedig Loop")
+    logger.info("Starting Dig Loop")
 
     for turn in range(max_turns):
         if cancel_event and cancel_event.is_set(): raise CancelledError("Cancelled by user")
         try:
-            response = client.chat.completions.create(model=config.model, messages=messages, tools=FILEDIG_TOOLS, tool_choice="auto")
+            response = client.chat.completions.create(model=config.model, messages=messages, tools=DIG_TOOLS, tool_choice="auto")
             msg = response.choices[0].message
             try: msg_dict = msg.model_dump(exclude_none=True)
             except AttributeError: msg_dict = msg.dict(exclude_none=True)
@@ -306,7 +306,7 @@ def run_filedig_agent(
             else:
                 if msg.content: output_func(msg.content)
         except Exception as e:
-            logger.error(f"Filedig error: {e}")
+            logger.error(f"Dig error: {e}")
             output_func(f"Error: {e}")
             break
             

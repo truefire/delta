@@ -254,7 +254,7 @@ def handle_queue_event(event: dict):
             state.is_searching = False
             state.view_tree_dirty = True
 
-    elif event_type == "filedig_update" and session:
+    elif event_type == "dig_update" and session:
         # Show tool activity in UI
         msg = event.get("message", "")
         
@@ -272,35 +272,35 @@ def handle_queue_event(event: dict):
             tool_bubble.update(msg + "\n")
             session.bubbles.append(tool_bubble)
     
-    elif event_type == "filedig_success":
+    elif event_type == "dig_success":
         # Handle successful dig - spawn new session
         found_files = event.get("files", [])
         explanation = event.get("explanation", "")
         prompt = event.get("prompt", "")
         tool_calls = event.get("tool_calls", 0)
         
-        # 0. Grouping logic: Ensure filedig session has a group, and new session joins it
-        filedig_sess = state.sessions.get(session_id)
+        # 0. Grouping logic: Ensure dig session has a group, and new session joins it
+        dig_sess = state.sessions.get(session_id)
         target_group_id = None
         target_planning = False
         target_ask = False
 
-        if filedig_sess:
-            filedig_sess.completed = True
-            filedig_sess.failed = False
+        if dig_sess:
+            dig_sess.completed = True
+            dig_sess.failed = False
 
             # Add completion bubble
-            done_bubble = ChatBubble("assistant", len(filedig_sess.bubbles))
+            done_bubble = ChatBubble("assistant", len(dig_sess.bubbles))
             done_bubble.update(f"Completed in {tool_calls} toolcall(s).")
-            filedig_sess.bubbles.append(done_bubble)
+            dig_sess.bubbles.append(done_bubble)
 
-            if filedig_sess.group_id is None:
-                filedig_sess.group_id = state.next_group_id
+            if dig_sess.group_id is None:
+                dig_sess.group_id = state.next_group_id
                 state.next_group_id += 1
-            target_group_id = filedig_sess.group_id
+            target_group_id = dig_sess.group_id
             
-            target_planning = filedig_sess.is_planning
-            target_ask = filedig_sess.is_ask_mode
+            target_planning = dig_sess.is_planning
+            target_ask = dig_sess.is_ask_mode
             
         # 2. Prepare context files for Run session (do NOT add to global selection)
         valid_files = []
@@ -321,7 +321,7 @@ def handle_queue_event(event: dict):
 
         state.active_session_id = new_sess.id
         
-        full_prompt = f"{prompt}\n\n(Context found via Agentic search:\n{explanation})"
+        full_prompt = f"{prompt}\n\n(Context found via Digging:\n{explanation})"
         new_sess.input_text = ""
         new_sess.last_prompt = full_prompt
         
@@ -386,20 +386,20 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
             return
 
         def output_func(msg: str, end: str = "\n", flush: bool = False):
-            if not session.is_filedig:
+            if not session.is_dig:
                 state.gui_queue.put({"type": "status", "message": msg.rstrip()})
             else:
-                state.gui_queue.put({"type": "filedig_update", "session_id": session_id, "message": msg.rstrip()})
+                state.gui_queue.put({"type": "dig_update", "session_id": session_id, "message": msg.rstrip()})
 
         def stream_func(text: str, end: str = "", flush: bool = False):
             state.gui_queue.put({"type": "text", "session_id": session_id, "content": text})
 
-        if session.is_filedig:
-            from core import run_filedig_agent
-            result = run_filedig_agent(prompt, output_func, cancel_event, history=session.history)
+        if session.is_dig:
+            from core import run_dig_agent
+            result = run_dig_agent(prompt, output_func, cancel_event, history=session.history)
             if result.get("success"):
                 state.gui_queue.put({
-                    "type": "filedig_success",
+                    "type": "dig_success",
                     "session_id": session_id,
                     "files": result.get("files", []),
                     "explanation": result.get("explanation", ""),
@@ -525,7 +525,7 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
         state.gui_queue.put({"type": "done", "session_id": session_id})
 
 
-def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bool = False, is_filedig: bool = False, save_to_history: bool = True, high_priority: bool = False):
+def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bool = False, is_dig: bool = False, save_to_history: bool = True, high_priority: bool = False):
     """Common submission logic for prompt and plan."""
     from core import MAX_PROMPT_HISTORY
 
@@ -545,7 +545,7 @@ def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bo
     session.request_end_time = 0.0
     session.is_ask_mode = ask_mode
     session.is_planning = is_planning
-    session.is_filedig = is_filedig
+    session.is_dig = is_dig
     state.prompt_history_idx = -1
 
     ensure_user_bubble(session, session.last_prompt)
@@ -658,16 +658,16 @@ def submit_plan():
     _submit_common(session, prompt, is_planning=True, ask_mode=False)
 
 
-def submit_filedig(is_planning=False, ask_mode=False):
-    """Submit a filedig request."""
+def submit_dig(is_planning=False, ask_mode=False):
+    """Submit a dig request."""
     session = get_active_session()
     if not session: return
     
     prompt = session.input_text.strip()
     if not prompt: return
     
-    # Filedig doesn't care about current files, it finds them.
-    _submit_common(session, prompt, is_planning=is_planning, ask_mode=ask_mode, is_filedig=True)
+    # Dig doesn't care about current files, it finds them.
+    _submit_common(session, prompt, is_planning=is_planning, ask_mode=ask_mode, is_dig=True)
 
 
 def parse_and_distribute_plan(session):
