@@ -316,7 +316,7 @@ def process_request(
     files: list[str], prompt: str, history: list[dict], output_func: OutputFunc, stream_func: OutputFunc | None = None,
     cancel_event: threading.Event | None = None, validation_cmd: str = "", validation_timeout: float = 10.0,
     max_retries: int = 2, recursion_limit: int = 0, ambiguous_mode: str = "replace_all", ask_mode: bool = False,
-    plan_mode: bool = False, allow_new_files: bool = True, on_file_added: Callable[[Path], None] | None = None,
+    plan_mode: bool = False, no_context: bool = False, allow_new_files: bool = True, on_file_added: Callable[[Path], None] | None = None,
     on_diff_failure: Callable[[str, str], None] | None = None, on_validation_failure: Callable[[str], None] | None = None,
     verify: bool = False, validate_at_start: bool = False, on_validation_start: Callable[[str], None] | None = None,
     on_validation_success: Callable[[], None] | None = None, confirmation_callback: Callable[[dict[str, int], dict[str, str]], bool] | None = None,
@@ -345,7 +345,7 @@ def process_request(
             if plan_mode: logger.info("--- Planning Mode ---")
             else: logger.info("--- Ask Mode ---")
             generate(validated_files, prompt, output_func_override=output_func, raw_stream_output_func=stream_func,
-                    conversation_history=history, ask_mode=True, plan_mode=plan_mode, cancel_event=cancel_event, on_stream_start=on_llm_start)
+                    conversation_history=history, ask_mode=True, plan_mode=plan_mode, no_context=no_context, cancel_event=cancel_event, on_stream_start=on_llm_start)
             return make_result(True, None, "Planning complete." if plan_mode else "Ask mode complete.")
         except CancelledError as e: return make_result(False, None, str(e) or "Cancelled.")
         except Exception as e: return make_result(False, None, str(e))

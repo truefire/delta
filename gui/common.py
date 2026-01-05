@@ -361,7 +361,9 @@ def start_generation(session_id: int):
 
     ensure_user_bubble(session, session.last_prompt)
     
-    if session.forced_context_files is not None:
+    if session.is_no_context:
+        checked_files = []
+    elif session.forced_context_files is not None:
         checked_files = session.forced_context_files
     else:
         checked_files = [f for f in state.selected_files if state.file_checked.get(f, True)]
@@ -488,6 +490,7 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
             ambiguous_mode=amb_mode,
             ask_mode=session.is_ask_mode,
             plan_mode=session.is_planning,
+            no_context=session.is_no_context,
             allow_new_files=state.add_new_files,
             on_file_added=on_file_added,
             verify=state.verify_changes,
@@ -525,7 +528,7 @@ def _generation_worker(session_id: int, prompt: str, files: list, cancel_event: 
         state.gui_queue.put({"type": "done", "session_id": session_id})
 
 
-def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bool = False, is_dig: bool = False, save_to_history: bool = True, high_priority: bool = False):
+def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bool = False, is_dig: bool = False, save_to_history: bool = True, high_priority: bool = False, no_context: bool = False):
     """Common submission logic for prompt and plan."""
     from core import MAX_PROMPT_HISTORY
 
@@ -546,6 +549,7 @@ def _submit_common(session, prompt: str, is_planning: bool = False, ask_mode: bo
     session.is_ask_mode = ask_mode
     session.is_planning = is_planning
     session.is_dig = is_dig
+    session.is_no_context = no_context
     state.prompt_history_idx = -1
 
     ensure_user_bubble(session, session.last_prompt)
@@ -600,7 +604,7 @@ def _resume_submission_after_missing_check():
     _submit_common(session, prompt, is_planning=is_planning, ask_mode=ask_mode)
 
 
-def submit_prompt(ask_mode: bool = False):
+def submit_prompt(ask_mode: bool = False, no_context: bool = False):
     """Submit the current prompt."""
     session = get_active_session()
     if not session:
@@ -610,7 +614,7 @@ def submit_prompt(ask_mode: bool = False):
     if not prompt:
         return
 
-    if not check_missing_files(session, prompt, is_planning=False, ask_mode=ask_mode):
+    if not no_context and not check_missing_files(session, prompt, is_planning=False, ask_mode=ask_mode):
         return
 
     if state.use_git_backup and state.backup_enabled and not ask_mode:
@@ -626,7 +630,7 @@ def submit_prompt(ask_mode: bool = False):
             state.show_no_repo_popup = True
             return
 
-    _submit_common(session, prompt, is_planning=False, ask_mode=ask_mode)
+    _submit_common(session, prompt, is_planning=False, ask_mode=ask_mode, no_context=no_context)
 
 
 def submit_plan():

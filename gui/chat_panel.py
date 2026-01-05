@@ -505,13 +505,14 @@ def render_chat_session(session):
                 mtime = 0
             file_state_key.append((f, mtime))
 
-        current_key = (tuple(file_state_key), session.is_ask_mode, session.is_planning, core.config.extra_system_prompt)
+        current_key = (tuple(file_state_key), session.is_ask_mode, session.is_planning, session.is_no_context, core.config.extra_system_prompt)
         
         if state.cached_sys_key != current_key or state.cached_sys_bubble is None:
             sys_msg = build_system_message(
                 checked_files, 
                 ask_mode=session.is_ask_mode, 
-                plan_mode=session.is_planning
+                plan_mode=session.is_planning,
+                no_context=session.is_no_context
             )
             state.cached_sys_bubble = ChatBubble("system", -1)
             state.cached_sys_bubble.update(sys_msg)
@@ -746,6 +747,11 @@ def render_chat_session(session):
         imgui.pop_style_color()
         if imgui.is_item_hovered():
             imgui.set_tooltip("Ask questions without modifying files")
+        
+        if imgui.begin_popup_context_item("ask_ctx"):
+            if imgui.menu_item("Ask without context", "", False)[0]:
+                submit_prompt(ask_mode=True, no_context=True)
+            imgui.end_popup()
 
         imgui.same_line()
 

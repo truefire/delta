@@ -53,6 +53,7 @@ class ChatSession:
     is_debug: bool = False
     is_planning: bool = False  # True if this is a planning generation session
     is_dig: bool = False  # True if this is a file discovery session
+    is_no_context: bool = False  # True if this session sends no file context
     failed: bool = False  # True if last request failed
     completed: bool = False  # True if last request completed successfully
 
@@ -100,6 +101,7 @@ class ChatSession:
             "is_debug": self.is_debug,
             "is_planning": self.is_planning,
             "is_dig": self.is_dig,
+            "is_no_context": self.is_no_context,
             "failed": self.failed,
             "completed": self.completed,
             "backup_id": self.backup_id,
@@ -120,6 +122,7 @@ class ChatSession:
         self.is_debug = data.get("is_debug", False)
         self.is_planning = data.get("is_planning", False)
         self.is_dig = data.get("is_dig", getattr(data, "is_filedig", False)) # Fallback for legacy saves
+        self.is_no_context = data.get("is_no_context", False)
         self.failed = data.get("failed", False)
         self.completed = data.get("completed", False)
         self.backup_id = data.get("backup_id")

@@ -70,9 +70,16 @@ def build_file_contents(filenames: list[str]) -> str:
             logger.error(f"Failed to read {filename}: {e}")
     return "".join(parts)
 
-def build_system_message(filenames: list[str], ask_mode: bool = False, plan_mode: bool = False) -> str:
+def build_system_message(filenames: list[str], ask_mode: bool = False, plan_mode: bool = False, no_context: bool = False) -> str:
     sorted_names = sorted(filenames)
     msg = ""
+
+    if no_context:
+        msg = "You are a helpful assistant."
+        if config.extra_system_prompt:
+            msg = config.extra_system_prompt
+        return msg
+
     if plan_mode:
         msg = f"""You have been given the following files: {", ".join(sorted_names)}
 
@@ -128,23 +135,28 @@ def generate(
     conversation_history: list[dict] | None = None,
     ask_mode: bool = False,
     plan_mode: bool = False,
+    no_context: bool = False,
     cancel_event: threading.Event | None = None,
     on_stream_start: Callable[[], None] | None = None,
 ) -> str:
     output_func = output_func_override or print
     client = _create_openai_client()
     
-    system_message = build_system_message(in_filenames, ask_mode=ask_mode, plan_mode=plan_mode)
+    system_message = build_system_message(in_filenames, ask_mode=ask_mode, plan_mode=plan_mode, no_context=no_context)
     
-    text_files = [f for f in in_filenames if not is_image_file(f)]
-    image_files = [f for f in in_filenames if is_image_file(f)]
-    file_contents_str = build_file_contents(text_files)
+    if no_context:
+        egress_msg = prompt
+        image_files = []
+    else:
+        text_files = [f for f in in_filenames if not is_image_file(f)]
+        image_files = [f for f in in_filenames if is_image_file(f)]
+        file_contents_str = build_file_contents(text_files)
 
-    header = "File Contents"
-    egress_msg = f"{header}:\n{file_contents_str}"
-    if image_files:
-        egress_msg += f"\n\n(Plus {len(image_files)} image file(s) attached)"
-    egress_msg += f"\n\nRequest:\n{prompt}"
+        header = "File Contents"
+        egress_msg = f"{header}:\n{file_contents_str}"
+        if image_files:
+            egress_msg += f"\n\n(Plus {len(image_files)} image file(s) attached)"
+        egress_msg += f"\n\nRequest:\n{prompt}"
 
     api_user_content: str | list[dict[str, Any]] = egress_msg
     if image_files:
