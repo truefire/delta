@@ -1,10 +1,13 @@
 """Sessions rendering logic."""
 import os
 import json
+import threading
+import time
 from datetime import datetime
 from imgui_bundle import imgui
+from widgets import render_loading_spinner
 
-from core import get_available_backups, restore_git_backup, open_diff_report, backup_manager
+from core import get_available_backups, iter_backup_items, restore_git_backup, open_diff_report, backup_manager
 from application_state import (
     state, save_state, load_state, load_individual_session, delete_save, get_saves_list, SESSIONS_DIR, log_message
 )
@@ -139,13 +142,55 @@ def render_backup_history_window():
     opened, state.show_backup_history = imgui.begin("Backup History", state.show_backup_history)
 
     if opened:
-        if state.backup_list is None:
-            state.backup_list = get_available_backups()
+        if state.backup_list is None and not state.is_loading_backups:
+            state.is_loading_backups = True
+            state.backup_list = []
+            state.backup_list_version += 1
+            
+            def _loader():
+                try:
+                    loaded = []
+                    last_update = time.time()
+                    for item in iter_backup_items():
+                        loaded.append(item)
+                        if time.time() - last_update > 0.2:
+                            # Incremental update
+                            current = list(loaded)
+                            current.sort(key=lambda x: str(x.get("sort_key", "")), reverse=True)
+                            state.backup_list = current
+                            state.backup_list_version += 1
+                            last_update = time.time()
+                    
+                    # Final update
+                    loaded.sort(key=lambda x: str(x.get("sort_key", "")), reverse=True)
+                    state.backup_list = loaded
+                    state.backup_list_version += 1
+                except Exception as e:
+                    log_message(f"Error loading backups: {e}")
+                finally:
+                    state.is_loading_backups = False
+            
+            threading.Thread(target=_loader, daemon=True).start()
+
+        # Check for cache invalidation
+        if not hasattr(render_backup_history_window, "height_cache"):
+            render_backup_history_window.height_cache = {}
+        if not hasattr(render_backup_history_window, "last_list_version"):
+            render_backup_history_window.last_list_version = 0
+            
+        if state.backup_list_version != render_backup_history_window.last_list_version:
+            render_backup_history_window.height_cache = {}
+            render_backup_history_window.last_list_version = state.backup_list_version
 
         if imgui.button("Refresh"):
-            state.backup_list = get_available_backups()
+            state.backup_list = None 
+            render_backup_history_window.height_cache = {}
         if imgui.is_item_hovered():
             imgui.set_tooltip("Reload the list of backups.")
+
+        if state.is_loading_backups:
+            imgui.same_line()
+            render_loading_spinner("Loading...", radius=6.0)
 
         imgui.same_line()
         if imgui.button("Clear Files"):
@@ -160,6 +205,8 @@ def render_backup_history_window():
             if imgui.button("Yes, Delete Files", imgui.ImVec2(120, 0)):
                 backup_manager.clear_all_backups()
                 state.backup_list = None
+                if hasattr(render_backup_history_window, "height_cache"):
+                    render_backup_history_window.height_cache = {}
                 log_message("All file backups deleted")
                 imgui.close_current_popup()
             imgui.same_line()
@@ -175,110 +222,140 @@ def render_backup_history_window():
         else:
             imgui.begin_child("backup_list")
             from application_state import refresh_project_files
+            
+            if not hasattr(render_backup_history_window, "height_cache"):
+                render_backup_history_window.height_cache = {}
+            
+            cache = render_backup_history_window.height_cache
+            scroll_y = imgui.get_scroll_y()
+            win_h = imgui.get_window_height()
+            
+            # Buffer for smooth scrolling
+            visible_min = scroll_y - 200
+            visible_max = scroll_y + win_h + 200
+            
             for i, b in enumerate(backups):
-                sid = b["session_id"]
-                ts = b["timestamp"]
-                files = b["files"]
-                source = b.get("source", "file")
-                msg = b.get("message", "")
-
-                imgui.push_id(f"bak_{i}")
+                cursor_y = imgui.get_cursor_pos_y()
+                cached_h = cache.get(i)
+                should_render = True
                 
-                if source == "git":
-                    imgui.push_style_color(imgui.Col_.text, STYLE.get_imvec4("badge_git"))
-                    imgui.text("[GIT] ")
-                else:
-                    imgui.push_style_color(imgui.Col_.text, STYLE.get_imvec4("badge_file"))
-                    imgui.text("[FILE]")
-                imgui.pop_style_color()
+                if cached_h is not None:
+                    if (cursor_y + cached_h < visible_min) or (cursor_y > visible_max):
+                        should_render = False
                 
-                imgui.same_line()
-                
-                label = f"{ts}"
-                if msg and source == "git":
-                    label += f" - {msg[:30]}"
-                
-                if imgui.collapsing_header(f"{label}##{i}"):
-                    imgui.indent()
+                if should_render:
+                    start_y = imgui.get_cursor_pos_y()
                     
-                    if imgui.button("Restore"):
-                        imgui.open_popup("ConfirmRestore")
-                    if imgui.is_item_hovered():
-                        if source == "git":
-                            imgui.set_tooltip("Checkout this specific git commit state.")
-                        else:
-                            imgui.set_tooltip("Rollback project files to before these changes.")
+                    sid = b["session_id"]
+                    ts = b["timestamp"]
+                    files = b["files"]
+                    source = b.get("source", "file")
+                    msg = b.get("message", "")
 
-                    if imgui.begin_popup_modal("ConfirmRestore", None, imgui.WindowFlags_.always_auto_resize)[0]:
-                        imgui.text(f"Restore state from {ts}?")
-                        if source == "file":
-                            imgui.text_colored(STYLE.get_imvec4("btn_cncl"), "This will undo this session AND all newer sessions.")
-                        else:
-                            imgui.text_colored(STYLE.get_imvec4("btn_cncl"), "This will reset workspace to this git commit.")
+                    imgui.push_id(f"bak_{i}")
+                    
+                    if source == "git":
+                        imgui.push_style_color(imgui.Col_.text, STYLE.get_imvec4("badge_git"))
+                        imgui.text("[GIT] ")
+                    else:
+                        imgui.push_style_color(imgui.Col_.text, STYLE.get_imvec4("badge_file"))
+                        imgui.text("[FILE]")
+                    imgui.pop_style_color()
+                    
+                    imgui.same_line()
+                    
+                    label = f"{ts}"
+                    if msg and source == "git":
+                        label += f" - {msg[:30]}"
+                    
+                    if imgui.collapsing_header(f"{label}##{i}"):
+                        imgui.indent()
                         
-                        imgui.separator()
-                        
-                        if imgui.button("Yes, Restore", imgui.ImVec2(120, 0)):
+                        if imgui.button("Restore"):
+                            imgui.open_popup("ConfirmRestore")
+                        if imgui.is_item_hovered():
+                            if source == "git":
+                                imgui.set_tooltip("Checkout this specific git commit state.")
+                            else:
+                                imgui.set_tooltip("Rollback project files to before these changes.")
+
+                        if imgui.begin_popup_modal("ConfirmRestore", None, imgui.WindowFlags_.always_auto_resize)[0]:
+                            imgui.text(f"Restore state from {ts}?")
+                            if source == "file":
+                                imgui.text_colored(STYLE.get_imvec4("btn_cncl"), "This will undo this session AND all newer sessions.")
+                            else:
+                                imgui.text_colored(STYLE.get_imvec4("btn_cncl"), "This will reset workspace to this git commit.")
+                            
+                            imgui.separator()
+                            
+                            if imgui.button("Yes, Restore", imgui.ImVec2(120, 0)):
+                                try:
+                                    if source == "git":
+                                        res = restore_git_backup(sid)
+                                    else:
+                                        res = backup_manager.rollback_to_session(sid)
+                                        
+                                    log_message(f"Rolled back to {ts}")
+                                    for k, v in res.items():
+                                        log_message(f"  {k}: {v}")
+                                    refresh_project_files()
+                                    state.backup_list = None
+                                    render_backup_history_window.height_cache = {}
+                                except Exception as e:
+                                    log_message(f"Error restoring: {e}")
+                                imgui.close_current_popup()
+                                
+                            imgui.same_line()
+                            if imgui.button("Cancel", imgui.ImVec2(120, 0)):
+                                imgui.close_current_popup()
+                            imgui.end_popup()
+
+                        imgui.same_line()
+                        if imgui.button("Diff vs Current"):
                             try:
                                 if source == "git":
-                                    res = restore_git_backup(sid)
+                                    open_diff_report(sid, diff_against_disk=True)
                                 else:
-                                    res = backup_manager.rollback_to_session(sid)
-                                    
-                                log_message(f"Rolled back to {ts}")
-                                for k, v in res.items():
-                                    log_message(f"  {k}: {v}")
-                                refresh_project_files()
-                                state.backup_list = None
-                            except Exception as e:
-                                log_message(f"Error restoring: {e}")
-                            imgui.close_current_popup()
-                            
-                        imgui.same_line()
-                        if imgui.button("Cancel", imgui.ImVec2(120, 0)):
-                            imgui.close_current_popup()
-                        imgui.end_popup()
-
-                    imgui.same_line()
-                    if imgui.button("Diff vs Current"):
-                        try:
-                            if source == "git":
-                                open_diff_report(sid, diff_against_disk=True)
-                            else:
-                                sids_to_diff = [x["session_id"] for x in backups[:i+1] if x.get("source", "file") == "file"]
-                                open_diff_report(sids_to_diff, diff_against_disk=True)
-                        except Exception as e:
-                            log_message(f"Error opening diff: {e}")
-                    if imgui.is_item_hovered():
-                        imgui.set_tooltip("View changes between this backup and the current file system.")
-
-                    if i + 1 < len(backups):
-                        imgui.same_line()
-                        if imgui.button("Diff vs Prev"):
-                            try:
-                                if source == "file":
-                                    compare_to = backups[i-1]["session_id"] if i > 0 else None
-                                    open_diff_report(sid, compare_session_id=compare_to)
-                                else:
-                                    open_diff_report(sid)
+                                    sids_to_diff = [x["session_id"] for x in backups[:i+1] if x.get("source", "file") == "file"]
+                                    open_diff_report(sids_to_diff, diff_against_disk=True)
                             except Exception as e:
                                 log_message(f"Error opening diff: {e}")
                         if imgui.is_item_hovered():
-                            imgui.set_tooltip("View changes made in this specific session (vs previous state).")
+                            imgui.set_tooltip("View changes between this backup and the current file system.")
 
-                    if source == "file":
-                        imgui.same_line()
-                        if imgui.button("Delete"):
-                            backup_manager.delete_session(sid)
-                            state.backup_list = None
-                            log_message(f"Deleted backup {ts}")
+                        if i + 1 < len(backups):
+                            imgui.same_line()
+                            if imgui.button("Diff vs Prev"):
+                                try:
+                                    if source == "file":
+                                        compare_to = backups[i-1]["session_id"] if i > 0 else None
+                                        open_diff_report(sid, compare_session_id=compare_to)
+                                    else:
+                                        open_diff_report(sid)
+                                except Exception as e:
+                                    log_message(f"Error opening diff: {e}")
+                            if imgui.is_item_hovered():
+                                imgui.set_tooltip("View changes made in this specific session (vs previous state).")
 
-                    imgui.text_colored(STYLE.get_imvec4("fg_dim"), f"Files: {len(files)}")
-                    for f in files:
-                        imgui.bullet_text(os.path.basename(f))
+                        if source == "file":
+                            imgui.same_line()
+                            if imgui.button("Delete"):
+                                backup_manager.delete_session(sid)
+                                state.backup_list = None
+                                render_backup_history_window.height_cache = {}
+                                log_message(f"Deleted backup {ts}")
+
+                        imgui.text_colored(STYLE.get_imvec4("fg_dim"), f"Files: {len(files)}")
+                        for f in files:
+                            imgui.bullet_text(os.path.basename(f))
+                        
+                        imgui.unindent()
+                    imgui.pop_id()
                     
-                    imgui.unindent()
-                imgui.pop_id()
+                    end_y = imgui.get_cursor_pos_y()
+                    cache[i] = end_y - start_y
+                else:
+                    imgui.dummy(imgui.ImVec2(0, cached_h))
             imgui.end_child()
 
     imgui.end()

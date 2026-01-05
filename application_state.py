@@ -351,6 +351,8 @@ class AppState:
 
     # Caches
     backup_list: list | None = None
+    is_loading_backups: bool = False
+    backup_list_version: int = 0
     drag_data: Any = None
     folder_selection_counts: dict = field(default_factory=dict)
     

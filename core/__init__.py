@@ -22,7 +22,7 @@ from .llm import (
 
 from .backups import (
     backup_manager, GitShadowHandler, undo_last_changes, 
-    get_available_backups, is_git_installed, is_git_repo, 
+    get_available_backups, iter_backup_items, is_git_installed, is_git_repo, 
     init_git_repo, restore_git_backup, force_io_cache_refresh
 )
 

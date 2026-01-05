@@ -277,11 +277,15 @@ class BackupManager:
         project_hash = self._get_project_hash()
         sessions = set()
         
-        for pattern in ["*_manifest.json", "*.bak"]:
-            for f in self.backup_dir.glob(pattern):
-                parts = f.stem.split("_", 4)
-                if len(parts) >= 4 and parts[0] == project_hash:
-                    sessions.add(f"{parts[0]}_{parts[1]}_{parts[2]}_{parts[3]}")
+        try:
+            with os.scandir(str(self.backup_dir)) as it:
+                for entry in it:
+                    if entry.name.startswith(project_hash):
+                        parts = entry.name.split("_")
+                        if len(parts) >= 4:
+                            sessions.add(f"{parts[0]}_{parts[1]}_{parts[2]}_{parts[3]}")
+        except OSError:
+            pass
         
         return sorted(sessions, reverse=True)
     
@@ -290,12 +294,61 @@ class BackupManager:
             return []
         
         files = []
-        for backup_file in self.backup_dir.glob(f"{session_id}_*.bak"):
-            name_without_session = backup_file.stem[len(session_id) + 1:]
-            original_rel = name_without_session.replace("__", os.sep)
-            original_path = Path.cwd() / original_rel
-            files.append((backup_file, original_path))
+        try:
+            prefix = f"{session_id}_"
+            with os.scandir(str(self.backup_dir)) as it:
+                for entry in it:
+                    if entry.name.startswith(prefix) and entry.name.endswith(".bak") and entry.is_file():
+                        name_without_session = entry.name[len(prefix):-4]
+                        original_rel = name_without_session.replace("__", os.sep)
+                        original_path = Path.cwd() / original_rel
+                        files.append((Path(entry.path), original_path))
+        except OSError:
+            pass
         return files
+
+    def get_all_sessions_with_files(self) -> list[dict]:
+        """Get all sessions and their files in a single pass."""
+        if not self.backup_dir.exists():
+            return []
+
+        project_hash = self._get_project_hash()
+        sessions = {} 
+
+        try:
+            with os.scandir(str(self.backup_dir)) as it:
+                for entry in it:
+                    if not entry.name.startswith(project_hash):
+                        continue
+                    
+                    parts = entry.name.split("_")
+                    if len(parts) < 4: continue
+                    
+                    sid = "_".join(parts[:4])
+                    
+                    if sid not in sessions:
+                        # Attempt to extract timestamp for sorting: YYYYMMDD_HHMMSS
+                        sort_key = f"{parts[1]}_{parts[2]}" if len(parts) >= 3 else sid
+                        sessions[sid] = {
+                            "session_id": sid,
+                            "files": [],
+                            "sort_key": sort_key
+                        }
+                    
+                    if entry.name.endswith(".bak") and entry.is_file():
+                        prefix_len = len(sid) + 1
+                        if len(entry.name) > prefix_len:
+                            safe_name = entry.name[prefix_len:-4]
+                            original_rel = safe_name.replace("__", os.sep)
+                            original_path = Path.cwd() / original_rel
+                            sessions[sid]["files"].append((Path(entry.path), original_path))
+                            
+        except OSError:
+            return []
+            
+        results = list(sessions.values())
+        results.sort(key=lambda x: x["sort_key"], reverse=True)
+        return results
     
     def undo_session(self, session_id: str) -> dict[str, str]:
         results = {}
@@ -406,12 +459,13 @@ def undo_last_changes() -> dict[str, str]:
     
     return backup_manager.undo_session(sessions[0])
 
-def get_available_backups() -> list[dict]:
-    all_backups = []
-    
-    sessions = backup_manager.get_sessions()
-    for session_id in sessions:
-        files = backup_manager.get_session_files(session_id)
+def iter_backup_items():
+    """Yield available backup items."""
+    # Efficient single-pass fetch for file backups
+    for item in backup_manager.get_all_sessions_with_files():
+        session_id = item["session_id"]
+        files = item["files"]
+        
         parts = session_id.split("_")
         try:
             if len(parts) >= 3:
@@ -421,15 +475,15 @@ def get_available_backups() -> list[dict]:
                 timestamp = session_id
         except ValueError:
             timestamp = session_id
-        
-        all_backups.append({
+            
+        yield {
             "session_id": session_id,
             "timestamp": timestamp,
-            "sort_key": timestamp,
+            "sort_key": item["sort_key"],
             "files": [str(orig) for _, orig in files],
             "source": "file",
             "message": "File Backup"
-        })
+        }
 
     git = GitShadowHandler()
     if git.is_available():
@@ -438,8 +492,10 @@ def get_available_backups() -> list[dict]:
             item["sort_key"] = item["timestamp"]
             git_files = git.get_commit_files(item["session_id"])
             item["files"] = git_files
-            all_backups.append(item)
-    
+            yield item
+
+def get_available_backups() -> list[dict]:
+    all_backups = list(iter_backup_items())
     all_backups.sort(key=lambda x: str(x.get("sort_key", "")), reverse=True)
     return all_backups
 
