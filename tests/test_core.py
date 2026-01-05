@@ -577,8 +577,11 @@ def test_get_available_backups_merged():
          patch("core.backups.GitShadowHandler") as MockGit:
         
         # File backup (OLDER)
-        mock_bm.get_sessions.return_value = ["projectHash_20230101_120000_000"]
-        mock_bm.get_session_files.return_value = []
+        mock_bm.get_all_sessions_with_files.return_value = [{
+            "session_id": "projectHash_20220101_120000_000",
+            "sort_key": "20220101_120000",
+            "files": []
+        }]
         
         # Git backup (NEWER)
         git = MockGit.return_value
