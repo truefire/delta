@@ -95,9 +95,7 @@ def main_gui():
 
     # First run check
     if state.frame_count == 10:
-        print("First run detected. Checking for API key...")
         if not core.API_KEY and "openrouter" in core.API_BASE_URL:
-            print("No API key found. Please set one in the settings.")
             # Enforce dark theme on first boot for consistency
             if config.theme != "dark":
                 config.set_theme("dark")
